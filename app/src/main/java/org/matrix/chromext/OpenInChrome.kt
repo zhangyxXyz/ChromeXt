@@ -19,6 +19,14 @@ class OpenInChrome : Activity() {
     startActivity(chromeMain.putExtra("ChromeXt", url))
   }
 
+  private fun openUrl(url: String, destination: ComponentName?) {
+    if (destination == null) {
+      startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).setPackage(defaultPackage))
+    } else {
+      invokeChromeTabbed(url)
+    }
+  }
+
   @Suppress("QueryPermissionsNeeded")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
@@ -34,18 +42,23 @@ class OpenInChrome : Activity() {
     }
 
     val isSamsung = defaultPackage.startsWith("com.sec.android.app.sbrowser")
+    val isMi = miBrowserPackages.contains(defaultPackage)
     val intent: Intent = getIntent()
-    val destination: ComponentName =
-        ComponentName(
-            defaultPackage,
-            if (isSamsung) {
-              "com.sec.android.app.sbrowser.SBrowserMainActivity"
-            } else {
-              "com.google.android.apps.chrome.IntentDispatcher"
-            })
+    val destination: ComponentName? =
+        if (isMi) {
+          null
+        } else {
+          ComponentName(
+              defaultPackage,
+              if (isSamsung) {
+                "com.sec.android.app.sbrowser.SBrowserMainActivity"
+              } else {
+                "com.google.android.apps.chrome.IntentDispatcher"
+              })
+        }
 
     if (intent.action == Intent.ACTION_VIEW) {
-      intent.setComponent(destination)
+      if (destination == null) intent.setPackage(defaultPackage) else intent.setComponent(destination)
       intent.setDataAndType(intent.data, "text/html")
       startActivity(intent)
     } else if (intent.action == Intent.ACTION_SEND && !isSamsung) {
@@ -57,7 +70,7 @@ class OpenInChrome : Activity() {
 
       Log.d("Get share text: ${text}")
       if (text.startsWith("file://") || text.startsWith("data:")) {
-        invokeChromeTabbed(text)
+        openUrl(text, destination)
       } else {
         if (!text.contains("://")) {
           text = "https://google.com/search?q=${text.replace("#", "%23")}"
@@ -73,10 +86,8 @@ class OpenInChrome : Activity() {
         }
 
         startActivity(
-            Intent().apply {
-              action = Intent.ACTION_VIEW
-              data = Uri.parse(text)
-              component = destination
+            Intent(Intent.ACTION_VIEW, Uri.parse(text)).apply {
+              if (destination == null) setPackage(defaultPackage) else component = destination
             })
       }
     }

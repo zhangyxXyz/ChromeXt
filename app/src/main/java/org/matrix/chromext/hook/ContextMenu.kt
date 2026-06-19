@@ -127,7 +127,7 @@ object ContextMenuHook : BaseHook() {
             hookPopupWindow(horizontalCustomPopupDialog)
             showSelectionMenu.hookAfter {
               val view = it.args[0]
-              if (WebViewHook.WebView!!.isAssignableFrom(view::class.java)) Chrome.updateTab(view)
+              if (WebViewHook.isWebView(view)) Chrome.updateTab(view)
               val url = Chrome.getUrl()!!
               val titleId =
                   if (isChromeXtFrontEnd(url)) R.string.main_menu_developer_tools
@@ -138,7 +138,14 @@ object ContextMenuHook : BaseHook() {
           }
     } else if (Chrome.isMi) {
       val miuiFloatingSelectPopupWindow =
-          Chrome.load("com.miui.org.chromium.content.browser.miui.MiuiFloatingSelectPopupWindow")
+          runCatching {
+                Chrome.load("com.miui.org.chromium.content.browser.miui.MiuiFloatingSelectPopupWindow")
+              }
+              .getOrElse {
+                Log.d("Mi Browser selection menu hook skipped: ${it.message}")
+                isInit = true
+                return
+              }
       val mContentView = findField(miuiFloatingSelectPopupWindow) { name == "mContentView" }
       val mContext = findField(miuiFloatingSelectPopupWindow) { name == "mContext" }
       val mParent = findField(miuiFloatingSelectPopupWindow) { name == "mParent" }
@@ -164,7 +171,7 @@ object ContextMenuHook : BaseHook() {
             val delegate = mDelegate.get(popupWindow)!!
             val this0 = findField(delegate::class.java) { type == selectionPopupController }
             val controller = this0.get(delegate)!!
-            if (WebViewHook.WebView!!.isAssignableFrom(view::class.java)) Chrome.updateTab(view)
+            if (WebViewHook.isWebView(view)) Chrome.updateTab(view)
             Resource.enrich(context)
             val url = Chrome.getUrl()
 

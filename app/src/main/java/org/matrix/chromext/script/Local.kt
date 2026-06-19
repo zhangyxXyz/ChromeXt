@@ -113,7 +113,7 @@ object Local {
         JSONArray(
             ctx.assets.open("editor.css").bufferedReader().use { it.readText() }.split("\n\n"))
     promptInstallUserScript =
-        "const _editor_style = ${css}[0];\n" +
+        "globalThis._editor_style = ${css}[0];\n" +
             ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
     css =

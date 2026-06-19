@@ -1,4 +1,5 @@
 /build
+/analysis
 .gradle
 .kotlin
 apktool

@@ -19,7 +19,7 @@ import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.findMethodOrNull
 import org.matrix.chromext.utils.hookAfter
 
-val supportedPackages =
+val chromiumPackages =
     arrayOf(
         "app.vanadium.browser",
         "com.android.chrome",
@@ -51,11 +51,15 @@ val supportedPackages =
         "org.triple.banana",
         "us.spotco.mulch")
 
+val miBrowserPackages = arrayOf("com.android.browser", "com.mi.globalbrowser")
+
+val supportedPackages = chromiumPackages + miBrowserPackages
+
 class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
   override fun handleLoadPackage(lpparam: XC_LoadPackage.LoadPackageParam) {
     Log.d(lpparam.processName + " started")
     if (lpparam.packageName == "org.matrix.chromext") return
-    if (supportedPackages.contains(lpparam.packageName)) {
+    if (chromiumPackages.contains(lpparam.packageName)) {
       lpparam.classLoader
           .loadClass("org.chromium.ui.base.WindowAndroid")
           .declaredConstructors[1]
@@ -76,9 +80,7 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
       val ctx = AndroidAppHelper.currentApplication()
 
       Chrome.isMi =
-          Chrome.isMi ||
-              lpparam.packageName == "com.mi.globalbrowser" ||
-              lpparam.packageName == "com.android.browser"
+          Chrome.isMi || miBrowserPackages.contains(lpparam.packageName)
       Chrome.isQihoo = lpparam.packageName == "com.qihoo.contents"
 
       if (ctx == null && Chrome.isMi) return
@@ -87,8 +89,21 @@ class MainHook : IXposedHookLoadPackage, IXposedHookZygoteInit {
       if (ctx != null && lpparam.packageName != "android") Chrome.init(ctx, ctx.packageName)
 
       if (Chrome.isMi) {
-        WebViewHook.WebView = Chrome.load("com.miui.webkit.WebView")
+        WebViewHook.WebView =
+            runCatching { Chrome.load("hyper.webkit.WebView") }
+                .getOrElse { Chrome.load("com.miui.webkit.WebView") }
         runCatching {
+          WebViewHook.extraWebViews.add(Chrome.load("miui.browser.webview.BrowserWebView"))
+        }
+        runCatching {
+              WebViewHook.ViewClient = Chrome.load("miui.browser.webview.o")
+              WebViewHook.ChromeClient = Chrome.load("com.android.browser.Tab\$MainWebChromeClient")
+            }
+            .recoverCatching {
+              WebViewHook.ViewClient = Chrome.load("com.android.browser.Tab\$MainWebViewClient")
+              WebViewHook.ChromeClient = Chrome.load("com.android.browser.Tab\$MainWebChromeClient")
+            }
+            .recoverCatching {
               WebViewHook.ViewClient = Chrome.load("com.android.browser.tab.TabWebViewClient")
               WebViewHook.ChromeClient = Chrome.load("com.android.browser.tab.TabWebChromeClient")
             }

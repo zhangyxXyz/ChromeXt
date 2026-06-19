@@ -104,11 +104,26 @@ fun resolveContentUrl(url: String): String {
 
 private val trustedHosts =
     listOf("jingmatrix.github.io", "jianyu-ma.onrender.com", "jianyu-ma.netlify.app")
+private const val LOCAL_FRONT_END = "https://chromext.local/"
 
 fun isChromeXtFrontEnd(url: String?): Boolean {
-  if (url == null || !url.endsWith("/ChromeXt/")) return false
+  if (url == null) return false
+  if (url == LOCAL_FRONT_END ||
+      url.startsWith("${LOCAL_FRONT_END}?") ||
+      url.startsWith("${LOCAL_FRONT_END}#")) return true
+  if (!url.endsWith("/ChromeXt/")) return false
   trustedHosts.forEach { if (url == "https://" + it + "/ChromeXt/") return true }
   return false
+}
+
+fun isLocalChromeXtFrontEnd(url: String?): Boolean {
+  return url == LOCAL_FRONT_END ||
+      url?.startsWith("${LOCAL_FRONT_END}?") == true ||
+      url?.startsWith("${LOCAL_FRONT_END}#") == true
+}
+
+fun isLocalChromeXtResource(url: String?): Boolean {
+  return url?.startsWith(LOCAL_FRONT_END) == true
 }
 
 private val sandboxHosts = listOf("raw.githubusercontent.com", "gist.githubusercontent.com")

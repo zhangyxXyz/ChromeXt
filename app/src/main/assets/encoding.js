@@ -1,3 +1,4 @@
+(function () {
 const invalidChar = "�";
 
 class Encoding {
@@ -112,7 +113,7 @@ function preferUTF8(
   return result;
 }
 
-function fixEncoding(tryPart = false, tryFetch = true, node) {
+globalThis.fixEncoding = function fixEncoding(tryPart = false, tryFetch = true, node) {
   // return false if failed
   node = node || document.querySelector("body > pre");
   const url = window.location.href;
@@ -172,4 +173,5 @@ function fixEncoding(tryPart = false, tryFetch = true, node) {
   } else {
     return !failed;
   }
-}
+};
+})();

@@ -50,7 +50,7 @@ object Listener {
   val xmlhttpRequests = mutableMapOf<Double, XMLHttpRequest>()
   val allowedActions =
       mapOf(
-          "userscript" to listOf("block", "installScript"),
+          "userscript" to listOf("block", "checkScript", "installScript"),
           "front-end" to listOf("inspect_pages", "userscript", "extension"),
           "devtools" to listOf("websocket"),
       )
@@ -209,15 +209,46 @@ object Listener {
       "installScript" -> {
         val script = parseScript(payload)
         if (script == null) {
-          callback = "alert('Invalid UserScript');"
+          val detail =
+              JSONObject(
+                  mapOf(
+                      "ok" to false,
+                      "message" to "Invalid UserScript: missing or invalid metadata"))
+          Handler(Chrome.getContext().mainLooper).post {
+            Log.toast(Chrome.getContext(), "ChromeXt: failed to install script")
+          }
+          callback =
+              "if(globalThis.__chromextInstallResult)globalThis.__chromextInstallResult(${detail});try{(Symbol.${Local.name}&&Symbol.${Local.name}.unlock?Symbol.${Local.name}.unlock(${Local.key}):Symbol.ChromeXt).post('install_result', ${detail});}catch(e){}"
         } else {
+          val reinstall = ScriptDbManager.scripts.any { it.id == script.id }
           Log.i("Install script ${script.id}")
           ScriptDbManager.apply {
             insert(script)
             scripts.removeAll(scripts.filter { it.id == script.id })
             scripts.add(script)
           }
+          val detail =
+              JSONObject(
+                  mapOf(
+                      "ok" to true,
+                      "id" to script.id,
+                      "reinstall" to reinstall,
+                      "message" to if (reinstall) "Script reinstalled" else "Script installed"))
+          Handler(Chrome.getContext().mainLooper).post {
+            Log.toast(
+                Chrome.getContext(),
+                if (reinstall) "ChromeXt: script reinstalled" else "ChromeXt: script installed")
+          }
+          callback =
+              "if(globalThis.__chromextInstallResult)globalThis.__chromextInstallResult(${detail});try{(Symbol.${Local.name}&&Symbol.${Local.name}.unlock?Symbol.${Local.name}.unlock(${Local.key}):Symbol.ChromeXt).post('install_result', ${detail});}catch(e){}"
         }
+      }
+      "checkScript" -> {
+        val detail = JSONObject(payload)
+        val id = detail.getString("id")
+        detail.put("installed", ScriptDbManager.scripts.any { it.id == id })
+        callback =
+            "if(globalThis.__chromextInstallStatus)globalThis.__chromextInstallStatus(${detail});try{(Symbol.${Local.name}&&Symbol.${Local.name}.unlock?Symbol.${Local.name}.unlock(${Local.key}):Symbol.ChromeXt).post('install_status', ${detail});}catch(e){}"
       }
       "notification" -> {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
@@ -408,9 +439,47 @@ object Listener {
           val detail = JSONObject(mapOf("type" to "init"))
           detail.put("ids", JSONArray(ScriptDbManager.scripts.map { it.id }))
           callback = "ChromeXt.post('userscript', ${detail});"
-        } else {
-          val data = JSONObject(payload)
-          if (data.has("meta")) {
+          } else {
+            val data = JSONObject(payload)
+          if (data.has("source")) {
+            val script =
+                parseScript(
+                    data.getString("source"),
+                    ScriptDbManager.scripts
+                        .find { it.id == data.optString("previousId") }
+                        ?.storage
+                        ?.toString())
+            if (script != null) {
+              data.optString("previousId").takeIf { it.length > 0 && it != script.id }?.let { id ->
+                val dbHelper = ScriptDbHelper(Chrome.getContext())
+                val db = dbHelper.writableDatabase
+                db.delete("script", "id = ?", arrayOf(id))
+                ScriptDbManager.scripts.removeAll { it.id == id }
+                dbHelper.close()
+              }
+              ScriptDbManager.insert(script)
+              ScriptDbManager.scripts.removeAll { it.id == script.id }
+              ScriptDbManager.scripts.add(script)
+              callback =
+                  "ChromeXt.post('script_saved', ${JSONObject(mapOf("id" to script.id))});"
+            } else {
+              callback = "ChromeXt.post('script_error', {message:'Invalid userscript metadata'});"
+            }
+          } else if (data.has("read")) {
+            val script = ScriptDbManager.scripts.find { it.id == data.getString("read") }
+            callback =
+                if (script == null) {
+                  "ChromeXt.post('script_error', {message:'Script not found'});"
+                } else {
+                  val detail =
+                      JSONObject(
+                          mapOf(
+                              "id" to script.id,
+                              "source" to script.meta + script.code,
+                              "meta" to script.meta))
+                  "ChromeXt.post('script_detail', ${detail});"
+                }
+          } else if (data.has("meta")) {
             val script = ScriptDbManager.scripts.filter { it.id == data.getString("id") }.first()
             val newScript =
                 parseScript(data.getString("meta") + script.code, script.storage?.toString())
@@ -418,8 +487,10 @@ object Listener {
               ScriptDbManager.insert(newScript)
               ScriptDbManager.scripts.remove(script)
               ScriptDbManager.scripts.add(newScript)
+              callback =
+                  "ChromeXt.post('script_meta_saved', ${JSONObject(mapOf("id" to newScript.id))});"
             } else {
-              callback = "alert('Fail to update script metadata');"
+              callback = "ChromeXt.post('script_error', {message:'Fail to update script metadata'});"
             }
           } else if (data.has("ids")) {
             val jsonArray = data.getJSONArray("ids")

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 	<queries>
+		<package android:name="com.android.browser"/>
 		<package android:name="com.android.chrome"/>
 		<package android:name="com.brave.browser"/>
 		<package android:name="com.brave.browser_beta"/>
@@ -11,6 +12,7 @@
 		<package android:name="com.coccoc.trinhduyet"/>
 		<package android:name="com.coccoc.trinhduyet_beta"/>
 		<package android:name="com.kiwibrowser.browser"/>
+		<package android:name="com.mi.globalbrowser"/>
 		<package android:name="com.microsoft.emmx"/>
 		<package android:name="com.microsoft.emmx.beta"/>
 		<package android:name="com.microsoft.emmx.canary"/>
@@ -68,6 +70,16 @@
 				<action android:name="android.intent.action.SEND" />
 				<category android:name="android.intent.category.DEFAULT" />
 				<data android:mimeType="text/plain" />
+			</intent-filter>
+		</activity>
+		<activity
+			android:name=".ScriptManagerActivity"
+			android:label="@string/script_manager"
+			android:theme="@android:style/Theme.Material.Light.NoActionBar"
+			android:exported="true">
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
 			</intent-filter>
 		</activity>
     </application>

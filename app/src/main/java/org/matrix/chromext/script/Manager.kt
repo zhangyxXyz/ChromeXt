@@ -144,6 +144,7 @@ object ScriptDbManager {
     } else if (runScripts) {
       codes.add("Symbol.ChromeXt.lock(${Local.key}, '${Local.name}');")
     }
+    codes.add("globalThis.__ChromeXtInjected = true;")
     codes.add("//# sourceURL=local://ChromeXt/init" + if (frameId == null) "" else "/" + frameId)
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
     val initScript = codes.joinToString("\n")
@@ -157,9 +158,8 @@ object ScriptDbManager {
     codes.clear()
     if (asyncEvaluation) codes.add(initScript)
     if (runScripts) {
-      scripts
-          .filter { matching(it, url) && !(frameId != null && it.noframes) }
-          .forEach {
+      val matchedScripts = scripts.filter { matching(it, url) && !(frameId != null && it.noframes) }
+      matchedScripts.forEach {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
