@@ -14,6 +14,17 @@
     return;
   }
 
+  const i18n = globalThis.__chromextI18n || {};
+  function resolveLanguage(value = "system") {
+    if (value === "zh" || value === "en") return value;
+    return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+  const activeLanguage = resolveLanguage(globalThis.__ChromeXtLanguage || "system");
+  function t(key, values = {}) {
+    const template = i18n[activeLanguage]?.[key] || i18n.en?.[key] || key;
+    return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+  }
+
   const host = document.createElement("div");
   host.id = rootId;
   host.style.all = "initial";
@@ -110,7 +121,7 @@
       font-weight: 760;
     }
     .title.script-title {
-      color: #0f766e;
+      color: #2563eb;
     }
     .content {
       overflow: auto;
@@ -378,7 +389,7 @@
       }
       .eyebrow, .secondary, .empty { color: #9ca8ba; }
       .title, .primary { color: #f8fafc; }
-      .title.script-title { color: #5eead4; }
+      .title.script-title { color: #60a5fa; }
       .status { background: #172554; color: #93c5fd; }
       .row:active, .icon-btn:active { background: #202632; }
       .more { border-color: #3a4453; color: #e5e7eb; }
@@ -434,9 +445,29 @@
           name: script.name || script.id || "UserScript",
           namespace: script.namespace || "",
           version: script.version || "",
+          downloadURL: script.downloadURL || "",
+          installURL: script.installURL || "",
+          sourceURL: script.sourceURL || "",
+          url: script.url || "",
+          updateURL: script.updateURL || "",
         };
       })
       .filter((script) => script.id.length > 0);
+  }
+
+  function isScriptSourceUrl(value = "") {
+    return /^https?:\/\/.+\.user\.js(?:[?#].*)?$/i.test(value);
+  }
+
+  function installUrlFromScript(script) {
+    const url =
+      script.downloadURL ||
+      script.installURL ||
+      script.sourceURL ||
+      script.url ||
+      (isScriptSourceUrl(script.updateURL) ? script.updateURL : "") ||
+      (isScriptSourceUrl(script.namespace) ? script.namespace : "");
+    return /^https?:\/\//i.test(url) ? url : "";
   }
 
   function commandTitle(command) {
@@ -530,9 +561,43 @@
     el.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (el.dataset.longPressed === "1") {
+        delete el.dataset.longPressed;
+        return;
+      }
       onClick();
     });
     return el;
+  }
+
+  function addLongPress(target, action) {
+    let timer = 0;
+    let startX = 0;
+    let startY = 0;
+
+    const clearTimer = () => {
+      clearTimeout(timer);
+      timer = 0;
+    };
+
+    target.addEventListener("pointerdown", (event) => {
+      if (event.button !== undefined && event.button !== 0) return;
+      startX = event.clientX;
+      startY = event.clientY;
+      clearTimer();
+      timer = setTimeout(() => {
+        target.dataset.longPressed = "1";
+        action(event);
+      }, 600);
+    });
+    target.addEventListener("pointermove", (event) => {
+      if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) {
+        clearTimer();
+      }
+    });
+    ["pointerup", "pointercancel", "pointerleave"].forEach((type) => {
+      target.addEventListener(type, clearTimer);
+    });
   }
 
   function setText(className, text) {
@@ -577,6 +642,7 @@
     row.appendChild(meta);
     if (withMore) row.appendChild(setText("more", "..."));
     content.appendChild(row);
+    return row;
   }
 
   function addStatus() {
@@ -585,6 +651,20 @@
     status.className = "status";
     status.textContent = state.message;
     content.appendChild(status);
+  }
+
+  function copyInstallUrl(script) {
+    const url = installUrlFromScript(script);
+    if (!url) {
+      ChromeXt.dispatch("toast", { message: t("noInstallLinkForScript") });
+      return;
+    }
+    ChromeXt.dispatch("copy", {
+      type: "text",
+      text: url,
+      label: `ChromeXt install link: ${script.name || "UserScript"}`,
+      toast: t("installLinkCopied"),
+    });
   }
 
   function clearConfirm() {
@@ -614,27 +694,27 @@
     const actions = document.createElement("div");
     actions.className = "confirm-actions";
     const cancel = makeButton("confirm-action", () => clearConfirm());
-    cancel.textContent = "Cancel";
+    cancel.textContent = t("cancel");
     const apply = makeButton("confirm-action danger", () => {
       const action = state.confirm?.action;
       clearConfirm();
       if (action) action();
     });
-    apply.textContent = "Exclude";
+    apply.textContent = t("exclude");
     actions.append(cancel, apply);
     box.append(body, actions);
     confirmLayer.appendChild(box);
   }
 
   function renderScripts() {
-    addHeader("Script panel", false, true);
+    addHeader(t("scriptPanel"), false, true);
     clear(content);
     addStatus();
     const scripts = runningScripts();
     if (scripts.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
-      empty.textContent = "No scripts are running on this page yet.";
+      empty.textContent = t("noScriptsRunning");
       content.appendChild(empty);
     } else {
       scripts.forEach((script) => {
@@ -642,12 +722,12 @@
         const count = commands.length;
         const detail =
           count > 0
-            ? `${count} menu command${count === 1 ? "" : "s"}`
-            : "No user menu commands";
-        addRow(
+            ? t(count === 1 ? "menuCommand" : "menuCommands", { count })
+            : t("noUserMenuCommands");
+        const row = addRow(
           script.name.trim().slice(0, 1).toUpperCase() || "#",
           script.name,
-          [detail, script.namespace, script.version].filter(Boolean).join(" · "),
+          [detail, script.namespace, script.version].filter(Boolean).join(" ? "),
           () => {
             state.view = "commands";
             state.scriptId = script.id;
@@ -655,9 +735,10 @@
           },
           true
         );
+        addLongPress(row, () => copyInstallUrl(script));
       });
     }
-    addRow("icon:manager", "Script manager", "Open the installed scripts page", () => {
+    addRow("icon:manager", t("managerTitle"), t("scriptManagerSubtitle"), () => {
       host.remove();
       location.href = "https://chromext.local/?from=runtime";
     }, false, true);
@@ -674,10 +755,10 @@
     const commands = scriptCommands(script.id);
     const pageHost = currentHost();
     if (pageHost) {
-      addRow("icon:ban", `Exclude ${pageHost}`, `@exclude *://${pageHost}/*`, () => {
+      addRow("icon:ban", t("excludeSite", { host: pageHost }), t("excludeRule", { rule: `*://${pageHost}/*` }), () => {
         const rule = `*://${pageHost}/*`;
-        showConfirm(`Exclude ${pageHost}?`, `Add ${rule} to ${script.name}. Refresh the page for it to take effect.`, () => {
-          state.message = `Excluding ${pageHost}...`;
+        showConfirm(t("excludeConfirmTitle", { host: pageHost }), t("excludeConfirmDetail", { rule, script: script.name }), () => {
+          state.message = t("excludingSite", { host: pageHost });
           render(true);
           ChromeXt.dispatch("excludeScript", {
             id: script.id,
@@ -688,10 +769,10 @@
       });
       const wildcard = wildcardHost(pageHost);
       if (wildcard) {
-        addRow("icon:ban", `Exclude ${wildcard}`, `@exclude *://${wildcard}/*`, () => {
+        addRow("icon:ban", t("excludeSite", { host: wildcard }), t("excludeRule", { rule: `*://${wildcard}/*` }), () => {
           const rule = `*://${wildcard}/*`;
-          showConfirm(`Exclude ${wildcard}?`, `Add ${rule} to ${script.name}. Refresh the page for it to take effect.`, () => {
-            state.message = `Excluding ${wildcard}...`;
+          showConfirm(t("excludeConfirmTitle", { host: wildcard }), t("excludeConfirmDetail", { rule, script: script.name }), () => {
+            state.message = t("excludingSite", { host: wildcard });
             render(true);
             ChromeXt.dispatch("excludeScript", {
               id: script.id,
@@ -705,7 +786,7 @@
     if (commands.length === 0) {
       const empty = document.createElement("div");
       empty.className = "empty";
-      empty.textContent = "No user menu commands";
+      empty.textContent = t("noUserMenuCommands");
       content.appendChild(empty);
     } else {
       commands.forEach((command) => {

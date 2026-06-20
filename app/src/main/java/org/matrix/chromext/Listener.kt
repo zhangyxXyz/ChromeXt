@@ -50,8 +50,8 @@ object Listener {
   val xmlhttpRequests = mutableMapOf<Double, XMLHttpRequest>()
   val allowedActions =
       mapOf(
-          "userscript" to listOf("block", "checkScript", "installScript"),
-          "front-end" to listOf("inspect_pages", "userscript", "extension"),
+          "userscript" to listOf("block", "checkScript", "installScript", "settings"),
+          "front-end" to listOf("inspect_pages", "userscript", "extension", "settings"),
           "devtools" to listOf("websocket"),
       )
   val tabNotification = mutableMapOf<Int, Any>()
@@ -148,6 +148,13 @@ object Listener {
         val context = Chrome.getContext()
         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         clipboard.setPrimaryClip(clipData)
+        val toast = data.optString("toast")
+        if (toast.isNotEmpty()) Log.toast(context, toast)
+      }
+      "toast" -> {
+        val data = JSONObject(payload)
+        val message = data.optString("message")
+        if (message.isNotEmpty()) Log.toast(Chrome.getContext(), message)
       }
       "block" -> {
         val url = Chrome.getUrl(currentTab)
@@ -388,9 +395,20 @@ object Listener {
             JSONObject(
                 mapOf(
                     "side" to pref.getString("runtime_launcher_side", "left"),
-                    "top" to pref.getFloat("runtime_launcher_top", 58f).toDouble()))
+                    "top" to pref.getFloat("runtime_launcher_top", 58f).toDouble(),
+                    "enabled" to pref.getBoolean("runtime_launcher_enabled", true),
+                    "language" to pref.getString("language", "system")))
         callback =
             "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeLauncherPosition', ${detail});"
+      }
+      "settings" -> {
+        val pref = Chrome.getContext().getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+        val detail =
+            JSONObject(
+                mapOf(
+                    "runtimeLauncherEnabled" to pref.getBoolean("runtime_launcher_enabled", true),
+                    "language" to pref.getString("language", "system")))
+        callback = "Symbol.${Local.name}.unlock(${Local.key}).post('settings', ${detail});"
       }
       "excludeScript" -> {
         val data = JSONObject(payload)

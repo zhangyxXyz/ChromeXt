@@ -114,8 +114,14 @@ object Local {
     var css =
         JSONArray(
             ctx.assets.open("editor.css").bufferedReader().use { it.readText() }.split("\n\n"))
+    val i18n =
+        JSONObject(
+            mapOf(
+                "en" to JSONObject(ctx.assets.open("frontend/i18n/en.json").bufferedReader().use { it.readText() }),
+                "zh" to JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })))
     promptInstallUserScript =
         "globalThis._editor_style = ${css}[0];\n" +
+            "globalThis.__chromextI18n = ${i18n};\n" +
             ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
     css =
@@ -152,12 +158,13 @@ object Local {
             .replaceFirst("Symbol.ChromeXt", "Symbol." + name)
             .replaceFirst("ChromeXtUnlockKeyForEruda", key.toString())
     openRuntimePanel =
-        ctx.assets
-            .open("runtime-panel.js")
-            .bufferedReader()
-            .use { it.readText() }
-            .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
-            .replace("ChromeXtRuntimeKey", key.toString())
+        "globalThis.__chromextI18n = ${i18n};\n" +
+            ctx.assets
+                .open("runtime-panel.js")
+                .bufferedReader()
+                .use { it.readText() }
+                .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
+                .replace("ChromeXtRuntimeKey", key.toString())
     installRuntimePanelLauncher =
         "globalThis.__ChromeXtOpenRuntimePanel__ = () => {${openRuntimePanel}};\n" +
             ctx.assets

@@ -35,6 +35,56 @@ const els = {
   viewSource: $("#view-source"),
 };
 
+const fallbackMessages = {
+  connecting: "Connecting to ChromeXt...",
+  waiting: "Waiting for ChromeXt injection...",
+  newScript: "New Script",
+};
+
+let messages = fallbackMessages;
+let languageSetting = "system";
+let activeLanguage = resolveLanguage(languageSetting);
+
+function resolveLanguage(value = "system") {
+  if (value === "zh" || value === "en") return value;
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+async function loadMessages() {
+  activeLanguage = resolveLanguage(languageSetting);
+  const load = async (lang) => {
+    const response = await fetch(`/i18n/${lang}.json`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`Failed to load i18n: ${lang}`);
+    return response.json();
+  };
+  try {
+    const base = await load("en");
+    const localized = activeLanguage === "en" ? {} : await load(activeLanguage);
+    messages = { ...fallbackMessages, ...base, ...localized };
+  } catch (error) {
+    console.warn(error);
+    messages = fallbackMessages;
+  }
+}
+
+function t(key, values = {}) {
+  const template = messages[key] || fallbackMessages[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+}
+
+function applyLocale() {
+  document.documentElement.lang = activeLanguage === "zh" ? "zh-CN" : "en";
+  document.querySelectorAll("[data-i18n]").forEach((node) => {
+    node.textContent = t(node.dataset.i18n);
+  });
+  document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
+    node.placeholder = t(node.dataset.i18nPlaceholder);
+  });
+  els.newScript.setAttribute("aria-label", t("newScript"));
+}
+
+await loadMessages();
+applyLocale();
 function waitForChromeXt() {
   return new Promise((resolve) => {
     const started = Date.now();
@@ -45,7 +95,7 @@ function waitForChromeXt() {
         resolve(globalThis.ChromeXt);
       } else if (!slow && Date.now() - started > 5000) {
         slow = true;
-        els.status.textContent = "正在等待 ChromeXt 注入...";
+        els.status.textContent = t("waiting");
       }
     }, 50);
   });
@@ -57,6 +107,15 @@ function send(action, payload = "") {
   ChromeXt.dispatch(action, payload);
 }
 
+ChromeXt.addEventListener("settings", async (event) => {
+  languageSetting = event.detail?.language || "system";
+  await loadMessages();
+  applyLocale();
+  if (state.selectedId && state.metas.has(state.selectedId)) renderDetails(state.metas.get(state.selectedId));
+  renderList();
+});
+send("settings", "");
+
 function metaValue(meta = "", key) {
   return meta.match(new RegExp(`^//\\s+@${key}\\s+(.+)$`, "m"))?.[1]?.trim() || "";
 }
@@ -65,6 +124,65 @@ function metaValues(meta = "", key) {
   return Array.from(meta.matchAll(new RegExp(`^//\\s+@${key}\\s+(.+)$`, "gm"))).map((m) =>
     m[1].trim()
   );
+}
+
+function isScriptSourceUrl(value = "") {
+  return /^https?:\/\/.+\.user\.js(?:[?#].*)?$/i.test(value);
+}
+
+function installUrlFromMeta(meta = "") {
+  const keys = ["downloadURL", "installURL", "sourceURL", "url"];
+  for (const key of keys) {
+    const value = metaValue(meta, key);
+    if (/^https?:\/\//i.test(value)) return value;
+  }
+  const updateUrl = metaValue(meta, "updateURL");
+  if (isScriptSourceUrl(updateUrl)) return updateUrl;
+  const namespace = metaValue(meta, "namespace");
+  if (isScriptSourceUrl(namespace)) return namespace;
+  return "";
+}
+
+function copyInstallUrl(meta, label) {
+  const url = installUrlFromMeta(meta);
+  if (!url) {
+    send("toast", { message: t("noInstallLink") });
+    return;
+  }
+  send("copy", {
+    type: "text",
+    text: url,
+    label: `ChromeXt install link: ${label || "UserScript"}`,
+    toast: t("copiedInstallLink"),
+  });
+}
+
+function addLongPress(target, action) {
+  let timer = 0;
+  let startX = 0;
+  let startY = 0;
+
+  const clear = () => {
+    clearTimeout(timer);
+    timer = 0;
+  };
+
+  target.addEventListener("pointerdown", (event) => {
+    if (event.button !== undefined && event.button !== 0) return;
+    startX = event.clientX;
+    startY = event.clientY;
+    clear();
+    timer = setTimeout(() => {
+      target.dataset.longPressed = "1";
+      action(event);
+    }, 600);
+  });
+  target.addEventListener("pointermove", (event) => {
+    if (Math.abs(event.clientX - startX) > 10 || Math.abs(event.clientY - startY) > 10) clear();
+  });
+  ["pointerup", "pointercancel", "pointerleave"].forEach((type) => {
+    target.addEventListener(type, clear);
+  });
 }
 
 function isScriptEnabled(meta = "") {
@@ -84,7 +202,7 @@ function decodeUnicodeEscapes(value = "") {
 }
 
 function scriptNameFromMeta(meta = "") {
-  return metaValue(meta, "name") || "未命名脚本";
+  return metaValue(meta, "name") || t("unnamedScript");
 }
 
 function renderRuleList(node, values, emptyText) {
@@ -108,12 +226,12 @@ function renderDetails(meta = "") {
   const includes = metaValues(meta, "include");
   const excludes = metaValues(meta, "exclude");
   const grants = metaValues(meta, "grant");
-  els.matchCount.textContent = `${matches.length + includes.length} 匹配`;
-  els.grantCount.textContent = `${grants.length} 权限`;
-  renderRuleList(els.matchList, matches, "没有 @match");
-  renderRuleList(els.includeList, includes, "没有 @include");
-  renderRuleList(els.excludeList, excludes, "没有 @exclude");
-  renderRuleList(els.grantList, grants, "没有 @grant");
+  els.matchCount.textContent = t("matches", { count: matches.length + includes.length });
+  els.grantCount.textContent = t("grants", { count: grants.length });
+  renderRuleList(els.matchList, matches, t("noMatch"));
+  renderRuleList(els.includeList, includes, t("noInclude"));
+  renderRuleList(els.excludeList, excludes, t("noExclude"));
+  renderRuleList(els.grantList, grants, t("noGrant"));
   els.matchEditor.value = matches.join("\n");
   els.includeEditor.value = includes.join("\n");
   els.excludeEditor.value = excludes.join("\n");
@@ -128,11 +246,11 @@ function renderList() {
   });
 
   if (ids.length === 0) {
-    els.status.textContent = needle ? "没有匹配的脚本" : "还没有安装脚本";
+    els.status.textContent = needle ? t("noSearchResults") : t("noScripts");
     return;
   }
 
-  els.status.textContent = `${ids.length} 个脚本`;
+  els.status.textContent = t("scriptCount", { count: ids.length });
   ids.forEach((id) => {
     const meta = state.metas.get(id) || "";
     const row = document.createElement("div");
@@ -141,9 +259,18 @@ function renderList() {
     button.className = "script-open";
     button.type = "button";
     button.innerHTML = `<strong></strong><span></span>`;
-    button.querySelector("strong").textContent = scriptNameFromMeta(meta);
+    const name = scriptNameFromMeta(meta);
+    button.querySelector("strong").textContent = name;
     button.querySelector("span").textContent = id;
-    button.addEventListener("click", () => openOverview(id));
+    button.addEventListener("click", (event) => {
+      if (button.dataset.longPressed === "1") {
+        delete button.dataset.longPressed;
+        event.preventDefault();
+        return;
+      }
+      openOverview(id);
+    });
+    addLongPress(button, () => copyInstallUrl(meta, name));
     row.append(button, createSwitch(isScriptEnabled(meta), (enabled) => toggleScript(id, enabled)));
     els.list.append(row);
   });
@@ -185,7 +312,7 @@ function showListView(replace = true) {
 function setSourceVisible(visible) {
   state.sourceVisible = visible;
   document.body.classList.toggle("show-source", visible);
-  els.viewSource.textContent = visible ? "详情" : "查看源码";
+  els.viewSource.textContent = visible ? t("details") : t("viewSource");
 }
 
 function normalizeRuleEditorValue(value) {
@@ -285,7 +412,7 @@ function setEditor({ id = "", source = "" }, updateHistory = true) {
   const meta = source.match(/^[\s\S]*?\/\/ ==\/UserScript==\s+/)?.[0] || "";
   if (meta) state.metas.set(id, meta);
   els.source.value = source;
-  els.scriptId.textContent = id || "新脚本";
+  els.scriptId.textContent = id || t("newScript");
   els.scriptName.textContent = scriptNameFromMeta(meta);
   els.enabledToggle.checked = isScriptEnabled(meta);
   els.enabledToggle.disabled = id.length === 0;
@@ -312,7 +439,7 @@ function openSource() {
     setSourceVisible(true);
     setViewHash("source", state.selectedId);
   } else {
-    els.source.value = "正在加载源码...";
+    els.source.value = t("loadingSource");
     setSourceVisible(true);
     setViewHash("source", state.selectedId);
     send("userscript", JSON.stringify({ read: state.selectedId }));
@@ -349,7 +476,7 @@ function saveScript() {
 }
 
 function deleteScript() {
-  if (!state.selectedId || !confirm("删除这个脚本？")) return;
+  if (!state.selectedId || !confirm(t("deleteConfirm"))) return;
   send("userscript", JSON.stringify({ ids: [state.selectedId], delete: true }));
   state.ids = state.ids.filter((id) => id !== state.selectedId);
   state.metas.delete(state.selectedId);
@@ -410,7 +537,7 @@ ChromeXt?.addEventListener("script_meta_saved", (event) => {
   send("userscript", "");
 });
 ChromeXt?.addEventListener("script_error", (event) => {
-  els.status.textContent = event.detail?.message || "脚本操作失败";
+  els.status.textContent = event.detail?.message || t("scriptActionFailed");
   els.save.disabled = false;
 });
 

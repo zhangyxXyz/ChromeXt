@@ -4,6 +4,42 @@ const isSandboxed = [
   "gist.githubusercontent.com",
 ].includes(location.hostname);
 
+const i18n = globalThis.__chromextI18n || {};
+let languageSetting = "system";
+let activeLanguage = resolveLanguage(languageSetting);
+
+function resolveLanguage(value = "system") {
+  if (value === "zh" || value === "en") return value;
+  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+}
+
+function setLanguage(value = "system") {
+  languageSetting = value;
+  activeLanguage = resolveLanguage(value);
+  document.documentElement.lang = activeLanguage === "zh" ? "zh-CN" : "en";
+}
+
+function t(key, values = {}) {
+  const template = i18n[activeLanguage]?.[key] || i18n.en?.[key] || key;
+  return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+}
+
+function requestSettings() {
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = (value = "system") => {
+      if (done) return;
+      done = true;
+      setLanguage(value);
+      resolve();
+    };
+    const listener = (event) => finish(event.detail?.language || "system");
+    Symbol.ChromeXt.addEventListener("settings", listener);
+    Symbol.ChromeXt.dispatch("settings", "");
+    setTimeout(() => finish("system"), 500);
+  });
+}
+
 function readScriptText() {
   const meta = document.querySelector("#meta");
   const code = document.querySelector("#code");
@@ -11,7 +47,7 @@ function readScriptText() {
 }
 
 function currentInstallLabel() {
-  return globalThis.__chromextCurrentInstall?.installed ? "重新安装" : "安装";
+  return globalThis.__chromextCurrentInstall?.installed ? t("reinstall") : t("install");
 }
 
 async function installScript(force = false) {
@@ -23,9 +59,9 @@ async function installScript(force = false) {
   const confirm = dialog?.querySelector("button.primary");
   if (confirm) {
     confirm.disabled = true;
-    confirm.textContent = globalThis.__chromextCurrentInstall?.installed ? "重新安装中" : "安装中";
+    confirm.textContent = globalThis.__chromextCurrentInstall?.installed ? t("reinstalling") : t("installing");
   }
-  setInstallStatus(globalThis.__chromextCurrentInstall?.installed ? "正在重新安装脚本..." : "正在安装脚本...");
+  setInstallStatus(globalThis.__chromextCurrentInstall?.installed ? t("reinstallingScript") : t("installingScript"));
   Symbol.ChromeXt.dispatch("installScript", readScriptText());
 }
 
@@ -74,23 +110,21 @@ function showInstallResult(detail) {
   const confirm = dialog.querySelector("button.primary");
   const later = dialog.querySelector("button.secondary");
   if (detail?.ok) {
-    const message = detail.reinstall
-      ? "重新安装成功，可以去脚本管理里查看和编辑。"
-      : "安装成功，可以去脚本管理里查看和编辑。";
+    const message = detail.reinstall ? t("reinstallSuccess") : t("installSuccess");
     setInstallStatus(message, "success");
-    if (later) later.textContent = "留在此页";
+    if (later) later.textContent = t("stayHere");
     if (confirm) {
       confirm.disabled = false;
-      confirm.textContent = "打开脚本管理";
+      confirm.textContent = t("openScriptManager");
       confirm.onclick = () => {
         location.href = "https://chromext.local/";
       };
     }
   } else {
-    setInstallStatus(detail?.message || "安装失败，请检查脚本元数据。", "error");
+    setInstallStatus(detail?.message || t("installFailed"), "error");
     if (confirm) {
       confirm.disabled = false;
-      confirm.textContent = globalThis.__chromextCurrentInstall?.installed ? "重试重新安装" : "重试安装";
+      confirm.textContent = globalThis.__chromextCurrentInstall?.installed ? t("retryReinstall") : t("retryInstall");
       confirm.onclick = () => installScript(true);
     }
   }
@@ -112,12 +146,12 @@ function showInstallStatus(detail) {
   const title = dialog.querySelector("h2");
   const confirm = dialog.querySelector("button.primary");
   if (detail.installed) {
-    if (title) title.textContent = "重新安装用户脚本";
-    if (confirm && !confirm.disabled) confirm.textContent = "重新安装";
-    setInstallStatus("检测到已安装此脚本，再次确认将覆盖更新。", "pending");
+    if (title) title.textContent = t("reinstallUserScript");
+    if (confirm && !confirm.disabled) confirm.textContent = t("reinstall");
+    setInstallStatus(t("alreadyInstalled"), "pending");
   } else {
-    if (title) title.textContent = "安装用户脚本";
-    if (confirm && !confirm.disabled) confirm.textContent = "安装";
+    if (title) title.textContent = t("installUserScript");
+    if (confirm && !confirm.disabled) confirm.textContent = t("install");
     setInstallStatus("");
   }
 }
@@ -149,10 +183,9 @@ function renderEditor(code, alertEncoding) {
 
   if (alertEncoding) {
     createDialog({
-      title: "编码可能异常",
-      message:
-        "当前脚本可能包含编码异常的文本。建议下载脚本后本地打开确认，再决定是否安装。",
-      actions: [{ text: "知道了", action: (dialog) => dialog.close() }],
+      title: t("encodingWarningTitle"),
+      message: t("encodingWarningBody"),
+      actions: [{ text: t("ok"), action: (dialog) => dialog.close() }],
     });
   } else {
     createInstallDialog(split.metaText);
@@ -199,7 +232,7 @@ function createInstallDialog(metaText) {
 
 function createInstallContent(metaText) {
   const shell = createNode("div", "cx-dialog");
-  const name = metaValue(metaText, "name") || "未命名脚本";
+  const name = metaValue(metaText, "name") || t("unnamedScript");
   const namespace = metaValue(metaText, "namespace") || "UserScript";
   const description = metaValue(metaText, "description");
   const version = metaValue(metaText, "version");
@@ -210,24 +243,24 @@ function createInstallContent(metaText) {
   const asksChromeXt = metaText.includes("GM.ChromeXt");
 
   shell.append(createNode("p", "cx-eyebrow", "ChromeXt"));
-  shell.append(createNode("h2", null, "安装用户脚本"));
+  shell.append(createNode("h2", null, t("installUserScript")));
   shell.append(createNode("p", "cx-script-name", name));
   shell.append(createNode("p", "cx-namespace", namespace));
   if (description) shell.append(createNode("p", "cx-message", description));
 
   const stats = createNode("div", "cx-stats");
-  stats.append(createNode("span", null, `${matches.length + includes.length} 个匹配规则`));
-  stats.append(createNode("span", null, `${excludes.length} 个排除规则`));
-  stats.append(createNode("span", null, `${grants.length} 个权限`));
+  stats.append(createNode("span", null, t("matchRules", { count: matches.length + includes.length })));
+  stats.append(createNode("span", null, t("excludeRules", { count: excludes.length })));
+  stats.append(createNode("span", null, t("grantCount", { count: grants.length })));
   if (version) stats.append(createNode("span", null, `v${version}`));
   shell.append(stats);
 
-  renderMetaPillList(shell, "Match", matches, "没有 match 规则");
-  renderMetaPillList(shell, "Include", includes, "没有 include 规则");
-  renderMetaPillList(shell, "Exclude", excludes, "没有排除规则");
+  renderMetaPillList(shell, "Match", matches, t("noMatchRule"));
+  renderMetaPillList(shell, "Include", includes, t("noIncludeRule"));
+  renderMetaPillList(shell, "Exclude", excludes, t("noExcludeRule"));
 
   if (asksChromeXt) {
-    const warning = createNode("p", "cx-warning", "此脚本声明了 GM.ChromeXt，请确认来源可信。");
+    const warning = createNode("p", "cx-warning", t("chromeXtWarning"));
     shell.append(warning);
   }
   const status = createNode("p", "cx-status", "");
@@ -235,14 +268,11 @@ function createInstallContent(metaText) {
   shell.append(status);
 
   const actionBar = createNode("div", "cx-actions");
-  const later = createNode("button", "secondary", "稍后提醒");
+  const later = createNode("button", "secondary", t("cancel"));
   later.type = "button";
   later.addEventListener("click", () => {
     const dialog = document.querySelector("dialog#confirm");
     dialog?.close();
-    setTimeout(() => {
-      if (dialog && !dialog.open) dialog.showModal();
-    }, 30000);
   });
   const confirm = createNode("button", "primary", currentInstallLabel());
   confirm.type = "button";
@@ -276,6 +306,7 @@ async function prepareDOM() {
       return document.addEventListener("DOMContentLoaded", prepareDOM);
     }
   }
+  await requestSettings();
   Symbol.installScript = installScript;
   if (!globalThis.__chromextInstallResultHooked) {
     globalThis.__chromextInstallResultHooked = true;

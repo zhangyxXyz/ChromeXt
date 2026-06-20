@@ -1,13 +1,13 @@
 :root {
   color-scheme: light dark;
-  --bg: #f6f7f8;
+  --bg: #f5f7fb;
   --panel: #ffffff;
   --panel-soft: #eef2f5;
   --text: #172026;
   --muted: #60707c;
   --line: #d9e0e5;
-  --accent: #0f766e;
-  --accent-strong: #0b5f59;
+  --accent: #2563eb;
+  --accent-strong: #1d4ed8;
   --danger: #b42318;
   --shadow: 0 12px 30px rgba(23, 32, 38, 0.08);
   font-family:
@@ -16,14 +16,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #111518;
-    --panel: #181e22;
-    --panel-soft: #20282d;
+    --bg: #0f1115;
+    --panel: #181c24;
+    --panel-soft: #202632;
     --text: #edf2f5;
     --muted: #96a4ad;
-    --line: #2d373d;
-    --accent: #2dd4bf;
-    --accent-strong: #5eead4;
+    --line: #2a3039;
+    --accent: #3b82f6;
+    --accent-strong: #60a5fa;
     --danger: #fb7185;
     --shadow: none;
   }
