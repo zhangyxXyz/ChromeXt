@@ -2,8 +2,9 @@
   if (window.top !== window) return;
   const id = "__chromext_runtime_launcher__";
   if (document.getElementById(id)) return;
-  const size = 44;
-  const peek = 28;
+  const width = 38;
+  const height = 28;
+  const peek = 24;
   let ChromeXt = null;
   try {
     ChromeXt = Symbol.ChromeXtRuntimeName.unlock(ChromeXtRuntimeKey, false);
@@ -21,9 +22,9 @@
     "z-index:2147483647",
     "display:grid",
     "place-items:center",
-    "width:44px",
-    "height:44px",
-    "border-radius:22px",
+    "width:38px",
+    "height:28px",
+    "border-radius:14px",
     "background:rgba(20,24,31,.72)",
     "color:#fff",
     "border:1px solid rgba(255,255,255,.18)",
@@ -54,7 +55,7 @@
   }
 
   function clampTop(y) {
-    return Math.max(0, Math.min(innerHeight - size, y));
+    return Math.max(0, Math.min(innerHeight - height, y));
   }
 
   function icon() {
@@ -64,14 +65,14 @@
   function applySideStyle(expanded = false) {
     const iconEl = icon();
     if (side === "right") {
-      button.style.left = `${expanded ? innerWidth - size : innerWidth - peek}px`;
-      button.style.borderRadius = "22px 0 0 22px";
+      button.style.left = `${expanded ? innerWidth - width : innerWidth - peek}px`;
+      button.style.borderRadius = "14px 0 0 14px";
       button.style.borderLeft = "1px solid rgba(255,255,255,.18)";
       button.style.borderRight = "0";
       if (iconEl) iconEl.style.transform = "translateX(-3px)";
     } else {
-      button.style.left = `${expanded ? 0 : peek - size}px`;
-      button.style.borderRadius = "0 22px 22px 0";
+      button.style.left = `${expanded ? 0 : peek - width}px`;
+      button.style.borderRadius = "0 14px 14px 0";
       button.style.borderLeft = "0";
       button.style.borderRight = "1px solid rgba(255,255,255,.18)";
       if (iconEl) iconEl.style.transform = "translateX(3px)";
@@ -94,9 +95,9 @@
 
   function floatAt(x, y) {
     button.style.transition = "none";
-    button.style.left = `${Math.max(0, Math.min(innerWidth - size, x))}px`;
+    button.style.left = `${Math.max(0, Math.min(innerWidth - width, x))}px`;
     button.style.top = `${clampTop(y)}px`;
-    button.style.borderRadius = "22px";
+    button.style.borderRadius = "14px";
     button.style.borderLeft = "1px solid rgba(255,255,255,.18)";
     button.style.borderRight = "1px solid rgba(255,255,255,.18)";
     const iconEl = icon();
@@ -132,6 +133,7 @@
   button.addEventListener(
     "pointerdown",
     (event) => {
+      if (!document.getElementById("__chromext_runtime_panel__")) expand();
       startX = event.clientX;
       startY = event.clientY;
       const rect = button.getBoundingClientRect();
