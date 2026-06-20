@@ -107,6 +107,24 @@ function send(action, payload = "") {
   ChromeXt.dispatch(action, payload);
 }
 
+const scrollbarTimers = new WeakMap();
+
+function bindAutoScrollbar(node) {
+  if (!node || node.dataset.cxScrollbar === "1") return;
+  node.dataset.cxScrollbar = "1";
+  node.addEventListener(
+    "scroll",
+    () => {
+      node.classList.add("scrolling");
+      clearTimeout(scrollbarTimers.get(node));
+      scrollbarTimers.set(node, setTimeout(() => node.classList.remove("scrolling"), 700));
+    },
+    { passive: true }
+  );
+}
+
+[els.details, els.source, els.matchEditor, els.includeEditor, els.excludeEditor].forEach(bindAutoScrollbar);
+
 ChromeXt.addEventListener("settings", async (event) => {
   languageSetting = event.detail?.language || "system";
   await loadMessages();

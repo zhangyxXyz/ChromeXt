@@ -82,6 +82,24 @@ function createNode(tag, className, text) {
   return node;
 }
 
+const scrollbarTimers = new WeakMap();
+
+function bindAutoScrollbar(root = document) {
+  root.querySelectorAll("pre,.cx-dialog,.cx-stats,.cx-pill-list").forEach((node) => {
+    if (node.dataset.cxScrollbar === "1") return;
+    node.dataset.cxScrollbar = "1";
+    node.addEventListener(
+      "scroll",
+      () => {
+        node.classList.add("scrolling");
+        clearTimeout(scrollbarTimers.get(node));
+        scrollbarTimers.set(node, setTimeout(() => node.classList.remove("scrolling"), 700));
+      },
+      { passive: true }
+    );
+  });
+}
+
 function renderMetaPillList(parent, title, values, emptyText) {
   const section = createNode("section", "cx-section");
   section.append(createNode("h3", null, title));
@@ -196,6 +214,7 @@ function renderEditor(code, alertEncoding) {
   code.setAttribute("contenteditable", true);
   scriptMeta.setAttribute("spellcheck", false);
   code.setAttribute("spellcheck", false);
+  bindAutoScrollbar();
 }
 
 function createDialog({ title, message, actions }) {
@@ -216,6 +235,7 @@ function createDialog({ title, message, actions }) {
   shell.append(actionBar);
   dialog.append(shell);
   document.body.prepend(dialog);
+  bindAutoScrollbar(dialog);
   dialog.showModal();
   return dialog;
 }
@@ -225,6 +245,7 @@ function createInstallDialog(metaText) {
   dialog.id = "confirm";
   dialog.append(createInstallContent(metaText));
   document.body.prepend(dialog);
+  bindAutoScrollbar(dialog);
   const id = scriptIdFromMeta(metaText);
   globalThis.__chromextCurrentInstall = { id, installed: false };
   Symbol.ChromeXt.dispatch("checkScript", { id });

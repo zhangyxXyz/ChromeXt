@@ -3,7 +3,10 @@ package org.matrix.chromext
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.Uri
 import android.net.http.HttpResponseCache
 import android.os.Build
@@ -14,6 +17,7 @@ import java.lang.ref.WeakReference
 import java.net.CookieManager
 import java.net.HttpCookie
 import java.util.concurrent.Executors
+import de.robv.android.xposed.XSharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.devtools.DevSessions
@@ -31,10 +35,13 @@ import org.matrix.chromext.utils.findMethod
 import org.matrix.chromext.utils.hookAfter
 import org.matrix.chromext.utils.invokeMethod
 
+const val ACTION_CHROMEXT_SETTINGS_CHANGED = "org.matrix.chromext.action.SETTINGS_CHANGED"
+
 object Chrome {
   private var mContext: WeakReference<Context>? = null
   private var mTab: WeakReference<Any>? = null
   private var devToolsReady = false
+  private var settingsReceiverRegistered = false
 
   var isBrave = false
   var isDev = false
@@ -54,6 +61,8 @@ object Chrome {
   fun init(ctx: Context, packageName: String? = null) {
     val initialized = mContext != null
     mContext = WeakReference(ctx)
+    syncSettingsFromModule(ctx)
+    registerSettingsReceiver(ctx)
 
     if (initialized || packageName == null) return
     this.packageName = packageName
@@ -103,6 +112,68 @@ object Chrome {
     val httpCacheDir = File(context.getCacheDir(), "ChromeXt")
     val httpCacheSize = 16 * 1024 * 1024L
     HttpResponseCache.install(httpCacheDir, httpCacheSize)
+  }
+
+  private fun registerSettingsReceiver(ctx: Context) {
+    if (settingsReceiverRegistered) return
+    val appContext = ctx.applicationContext ?: ctx
+    val receiver =
+        object : BroadcastReceiver() {
+          override fun onReceive(context: Context, intent: Intent) {
+            if (intent.action != ACTION_CHROMEXT_SETTINGS_CHANGED) return
+            val pref = context.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+            val editor = pref.edit()
+            if (intent.hasExtra("runtime_launcher_enabled")) {
+              editor.putBoolean(
+                  "runtime_launcher_enabled",
+                  intent.getBooleanExtra("runtime_launcher_enabled", true))
+            }
+            if (intent.hasExtra("language")) {
+              editor.putString("language", intent.getStringExtra("language") ?: "system")
+            }
+            editor.apply()
+            syncRuntimeLauncherSettings(context)
+          }
+        }
+    val filter = IntentFilter(ACTION_CHROMEXT_SETTINGS_CHANGED)
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+      appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
+    } else {
+      @Suppress("UnspecifiedRegisterReceiverFlag") appContext.registerReceiver(receiver, filter)
+    }
+    settingsReceiverRegistered = true
+  }
+
+  private fun syncSettingsFromModule(ctx: Context) {
+    runCatching {
+          val modulePref = XSharedPreferences(BuildConfig.APPLICATION_ID, "ChromeXt")
+          modulePref.reload()
+          val editor = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).edit()
+          if (modulePref.contains("runtime_launcher_enabled")) {
+            editor.putBoolean(
+                "runtime_launcher_enabled",
+                modulePref.getBoolean("runtime_launcher_enabled", true))
+          }
+          if (modulePref.contains("language")) {
+            editor.putString("language", modulePref.getString("language", "system"))
+          }
+          editor.apply()
+        }
+        .onFailure { Log.d("Failed to sync module settings: ${it.message}") }
+  }
+
+  private fun runtimeLauncherDetail(ctx: Context): JSONObject {
+    val pref = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+    return JSONObject(
+        mapOf(
+            "side" to pref.getString("runtime_launcher_side", "left"),
+            "top" to pref.getFloat("runtime_launcher_top", 58f).toDouble(),
+            "enabled" to pref.getBoolean("runtime_launcher_enabled", true),
+            "language" to pref.getString("language", "system")))
+  }
+
+  fun syncRuntimeLauncherSettings(ctx: Context = getContext()) {
+    broadcast("runtimeLauncherPosition", runtimeLauncherDetail(ctx), false) { true }
   }
 
   private fun saveRedirectCookie() {

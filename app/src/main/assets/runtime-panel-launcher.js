@@ -213,12 +213,14 @@
     ChromeXt.addEventListener("runtimeLauncherPosition", (event) => {
       const data = event.detail || {};
       if (data.enabled === false) {
+        document.getElementById("__chromext_runtime_panel__")?.remove();
         button.remove();
         return;
       }
       globalThis.__ChromeXtLanguage = data.language || "system";
       side = data.side === "right" ? "right" : "left";
       topPx = Number.isFinite(data.top) ? data.top : 58;
+      if (!button.isConnected) mount();
       if (document.getElementById("__chromext_runtime_panel__")) expand();
       else dock();
     });

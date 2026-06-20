@@ -4,3 +4,6 @@
 .kotlin
 apktool
 *.apk
+*.jks
+*.keystore
+keystore.properties

@@ -355,6 +355,40 @@ textarea {
   tab-size: 2;
 }
 
+textarea,
+.details {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+  transition: scrollbar-color 0.18s ease;
+}
+
+textarea.scrolling,
+.details.scrolling {
+  scrollbar-color: color-mix(in srgb, var(--muted) 62%, transparent) transparent;
+}
+
+textarea::-webkit-scrollbar,
+.details::-webkit-scrollbar {
+  width: 4px;
+  height: 4px;
+}
+
+textarea::-webkit-scrollbar-track,
+.details::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+textarea::-webkit-scrollbar-thumb,
+.details::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: transparent;
+}
+
+textarea.scrolling::-webkit-scrollbar-thumb,
+.details.scrolling::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--muted) 62%, transparent);
+}
+
 .meta-editor {
   display: block;
   min-height: 72px;

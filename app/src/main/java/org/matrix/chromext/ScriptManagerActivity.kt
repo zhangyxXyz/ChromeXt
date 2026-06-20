@@ -142,7 +142,8 @@ class ScriptManagerActivity : Activity() {
     }
     group.setOnCheckedChangeListener { rg, checkedId ->
       val selected = rg.findViewById<RadioButton>(checkedId)?.tag as? String ?: return@setOnCheckedChangeListener
-      pref.edit().putString("language", selected).apply()
+      pref.edit().putString("language", selected).commit()
+      broadcastSettings(language = selected)
       render()
     }
     card.addView(group)
@@ -170,7 +171,8 @@ class ScriptManagerActivity : Activity() {
           thumbTintList = tint(blue, Color.WHITE)
           trackTintList = tint(Color.rgb(191, 219, 254), line)
           setOnCheckedChangeListener { _: CompoundButton, checked: Boolean ->
-            pref.edit().putBoolean("runtime_launcher_enabled", checked).apply()
+            pref.edit().putBoolean("runtime_launcher_enabled", checked).commit()
+            broadcastSettings(runtimeLauncherEnabled = checked)
           }
         })
     card.addView(row)
@@ -225,5 +227,19 @@ class ScriptManagerActivity : Activity() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
     runCatching { startActivity(intent) }
         .onFailure { Log.toast(this, tr("无法打开脚本管理", "Unable to open script manager")) }
+  }
+
+  private fun broadcastSettings(
+      runtimeLauncherEnabled: Boolean? = null,
+      language: String? = null,
+  ) {
+    supportedPackages
+        .filter { runCatching { packageManager.getPackageInfo(it, 0) }.isSuccess }
+        .forEach { packageName ->
+          val intent = Intent(ACTION_CHROMEXT_SETTINGS_CHANGED).setPackage(packageName)
+          runtimeLauncherEnabled?.let { intent.putExtra("runtime_launcher_enabled", it) }
+          language?.let { intent.putExtra("language", it) }
+          sendBroadcast(intent)
+        }
   }
 }

@@ -50,59 +50,49 @@ jobs:
           echo "version_name=${VERSION_NAME}" >> "${GITHUB_OUTPUT}"
           echo "Building ChromeXt ${VERSION_NAME} from ${TAG_NAME}"
 
+      - name: Prepare release signing
+        shell: bash
+        env:
+          CHROMEXT_SIGNING_KEYSTORE_BASE64: ${{ secrets.CHROMEXT_SIGNING_KEYSTORE_BASE64 }}
+          CHROMEXT_KEYSTORE_PASSWORD: ${{ secrets.CHROMEXT_KEYSTORE_PASSWORD }}
+          CHROMEXT_KEY_ALIAS: ${{ secrets.CHROMEXT_KEY_ALIAS }}
+          CHROMEXT_KEY_PASSWORD: ${{ secrets.CHROMEXT_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for secret in \
+            CHROMEXT_SIGNING_KEYSTORE_BASE64 \
+            CHROMEXT_KEYSTORE_PASSWORD \
+            CHROMEXT_KEY_ALIAS \
+            CHROMEXT_KEY_PASSWORD; do
+            if [[ -z "${!secret}" ]]; then
+              echo "${secret} is not configured." >&2
+              exit 1
+            fi
+          done
+          echo "${CHROMEXT_SIGNING_KEYSTORE_BASE64}" | base64 --decode > release.keystore
+
       - name: Build release
         env:
           VERSION_NAME: ${{ steps.version.outputs.version_name }}
+          CHROMEXT_SIGNING_STORE_FILE: release.keystore
+          CHROMEXT_KEYSTORE_PASSWORD: ${{ secrets.CHROMEXT_KEYSTORE_PASSWORD }}
+          CHROMEXT_KEY_ALIAS: ${{ secrets.CHROMEXT_KEY_ALIAS }}
+          CHROMEXT_KEY_PASSWORD: ${{ secrets.CHROMEXT_KEY_PASSWORD }}
         run: ./gradlew app:assembleRelease
 
-      - name: Sign APK
-        id: sign
+      - name: Verify signed APK
+        id: apk
         shell: bash
         env:
-          SIGNING_KEY: ${{ secrets.SIGNING_KEY }}
-          ALIAS: ${{ secrets.ALIAS }}
-          KEY_STORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           TAG_NAME: ${{ steps.version.outputs.tag }}
         run: |
           set -euo pipefail
 
           BUILD_TOOLS="$(find "${ANDROID_HOME}/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)"
-          UNSIGNED_APK="app/build/outputs/apk/release/app-release-unsigned.apk"
-          ALIGNED_APK="app/build/outputs/apk/release/ChromeXt-${TAG_NAME}-aligned.apk"
+          RELEASE_APK="app/build/outputs/apk/release/app-release.apk"
           SIGNED_APK="app/build/outputs/apk/release/ChromeXt-${TAG_NAME}.apk"
 
-          if [[ -n "${SIGNING_KEY}" && -n "${ALIAS}" && -n "${KEY_STORE_PASSWORD}" && -n "${KEY_PASSWORD}" ]]; then
-            echo "${SIGNING_KEY}" | base64 --decode > release.keystore
-            KEYSTORE="release.keystore"
-            STORE_PASS="${KEY_STORE_PASSWORD}"
-            KEY_PASS="${KEY_PASSWORD}"
-            KEY_ALIAS="${ALIAS}"
-          else
-            echo "Signing secrets are not configured; using a temporary CI key."
-            keytool -genkeypair \
-              -keystore ci.keystore \
-              -storepass android \
-              -alias androiddebugkey \
-              -keypass android \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -dname "CN=ChromeXt CI,O=ChromeXt,C=US"
-            KEYSTORE="ci.keystore"
-            STORE_PASS="android"
-            KEY_PASS="android"
-            KEY_ALIAS="androiddebugkey"
-          fi
-
-          "${BUILD_TOOLS}/zipalign" -p -f 4 "${UNSIGNED_APK}" "${ALIGNED_APK}"
-          "${BUILD_TOOLS}/apksigner" sign \
-            --ks "${KEYSTORE}" \
-            --ks-key-alias "${KEY_ALIAS}" \
-            --ks-pass "pass:${STORE_PASS}" \
-            --key-pass "pass:${KEY_PASS}" \
-            --out "${SIGNED_APK}" \
-            "${ALIGNED_APK}"
+          cp "${RELEASE_APK}" "${SIGNED_APK}"
           "${BUILD_TOOLS}/apksigner" verify --verbose "${SIGNED_APK}"
 
           echo "apk=${SIGNED_APK}" >> "${GITHUB_OUTPUT}"
@@ -111,13 +101,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ChromeXt-${{ steps.version.outputs.tag }}.apk
-          path: ${{ steps.sign.outputs.apk }}
+          path: ${{ steps.apk.outputs.apk }}
 
       - name: Create draft release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.sign.outputs.apk }}
+          files: ${{ steps.apk.outputs.apk }}
           draft: true
           generate_release_notes: true
         env:
