@@ -233,13 +233,16 @@ class ScriptManagerActivity : Activity() {
       runtimeLauncherEnabled: Boolean? = null,
       language: String? = null,
   ) {
+    fun applyExtras(intent: Intent): Intent {
+      runtimeLauncherEnabled?.let { intent.putExtra("runtime_launcher_enabled", it) }
+      language?.let { intent.putExtra("language", it) }
+      return intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
+    }
     supportedPackages
         .filter { runCatching { packageManager.getPackageInfo(it, 0) }.isSuccess }
         .forEach { packageName ->
-          val intent = Intent(ACTION_CHROMEXT_SETTINGS_CHANGED).setPackage(packageName)
-          runtimeLauncherEnabled?.let { intent.putExtra("runtime_launcher_enabled", it) }
-          language?.let { intent.putExtra("language", it) }
-          sendBroadcast(intent)
+          sendBroadcast(applyExtras(Intent(ACTION_CHROMEXT_SETTINGS_CHANGED).setPackage(packageName)))
         }
+    sendBroadcast(applyExtras(Intent(ACTION_CHROMEXT_SETTINGS_CHANGED)))
   }
 }

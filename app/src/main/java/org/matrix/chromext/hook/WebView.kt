@@ -14,6 +14,7 @@ import java.lang.reflect.Proxy
 import java.lang.ref.WeakReference
 import java.net.URLConnection
 import java.util.WeakHashMap
+import org.json.JSONObject
 import org.matrix.chromext.Chrome
 import org.matrix.chromext.Listener
 import org.matrix.chromext.Resource
@@ -156,8 +157,14 @@ object WebViewHook : BaseHook() {
 
   private fun localFrontEndHtml(): String {
     val ctx = Chrome.getContext()
+    val pref = ctx.getSharedPreferences("ChromeXt", android.content.Context.MODE_PRIVATE)
+    val language = JSONObject.quote(pref.getString("language", "system") ?: "system")
     Resource.enrich(ctx)
-    val init = Local.initChromeXt + "\nglobalThis.ChromeXt = Symbol.ChromeXt;\n//# sourceURL=local://ChromeXt/init"
+    val init =
+        Local.initChromeXt +
+            "\nglobalThis.ChromeXt = Symbol.ChromeXt;\n" +
+            "globalThis.__ChromeXtLanguage = ${language};\n" +
+            "//# sourceURL=local://ChromeXt/init"
     return ctx.assets
         .open("frontend/index.html")
         .bufferedReader()

@@ -13,12 +13,16 @@ import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.os.Build
+import android.os.Environment
 import android.os.Handler
 import android.webkit.WebView
 import java.io.File
 import java.io.FileReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.devtools.DevSessions
@@ -76,6 +80,84 @@ object Listener {
       apply()
     }
     return null
+  }
+
+  private fun postToPage(event: String, detail: JSONObject, currentTab: Any?, frameId: String?) {
+    Handler(Chrome.getContext().mainLooper).post {
+      Chrome.evaluateJavascript(listOf("ChromeXt.post('${event}', ${detail});"), currentTab, frameId)
+    }
+  }
+
+  private fun metaValue(meta: String, key: String): String {
+    val pattern = Regex("""(?m)^//\s+@${Regex.escape(key)}\s+(.+)$""")
+    return pattern.find(meta)?.groups?.get(1)?.value?.trim() ?: ""
+  }
+
+  private fun isScriptSourceUrl(value: String): Boolean {
+    return Regex("""^https?://.+\.user\.js(?:[?#].*)?$""", RegexOption.IGNORE_CASE).matches(value)
+  }
+
+  private fun installUrlFromMeta(meta: String): String {
+    listOf("downloadURL", "installURL", "sourceURL", "url").forEach {
+      val value = metaValue(meta, it)
+      if (value.startsWith("http://") || value.startsWith("https://")) return value
+    }
+    val updateUrl = metaValue(meta, "updateURL")
+    if (isScriptSourceUrl(updateUrl)) return updateUrl
+    val namespace = metaValue(meta, "namespace")
+    if (isScriptSourceUrl(namespace)) return namespace
+    return ""
+  }
+
+  private fun downloadText(url: String): String {
+    val connection = URL(url).openConnection() as HttpURLConnection
+    connection.connectTimeout = 15000
+    connection.readTimeout = 20000
+    connection.instanceFollowRedirects = true
+    return connection.inputStream.bufferedReader().use { it.readText() }
+  }
+
+  private fun setSourceDisabled(source: String, disabled: Boolean): String {
+    val cleaned =
+        source
+            .replace(Regex("""(?m)^//\s+@(disable|disabled)(\s+.*)?\r?\n?"""), "")
+            .replace(Regex("""\n*$"""), "\n")
+    if (!disabled) return cleaned
+    val end = Regex("""(?m)^// ==/UserScript==\s*$""").find(cleaned) ?: return "// @disable\n" + cleaned
+    return cleaned.substring(0, end.range.first) + "// @disable\n" + cleaned.substring(end.range.first)
+  }
+
+  private fun exportScriptsToDownload(): JSONObject {
+    val scripts =
+        JSONArray(
+            ScriptDbManager.scripts.map {
+              JSONObject(
+                  mapOf(
+                      "id" to it.id,
+                      "source" to it.meta + it.code,
+                      "installURL" to installUrlFromMeta(it.meta)))
+            })
+    val backup =
+        JSONObject(
+            mapOf(
+                "type" to "ChromeXtUserScriptBackup",
+                "version" to 1,
+                "exportedAt" to
+                    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US).format(Date()),
+                "scripts" to scripts))
+    val dir =
+        File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "ChromeXt")
+    dir.mkdirs()
+    val file =
+        File(
+            dir,
+            "chromext-userscripts-" +
+                SimpleDateFormat("yyyy-MM-dd-HHmmss", Locale.US).format(Date()) +
+                ".json")
+    file.writeText(backup.toString(2), Charsets.UTF_8)
+    return JSONObject(mapOf("count" to scripts.length(), "path" to file.absolutePath))
   }
 
   private fun checkPermisson(action: String, key: Double, tab: Any?): Boolean {
@@ -512,7 +594,64 @@ object Listener {
           callback = "ChromeXt.post('userscript', ${detail});"
           } else {
             val data = JSONObject(payload)
-          if (data.has("source")) {
+          if (data.optBoolean("export")) {
+            runCatching { exportScriptsToDownload() }
+                .onSuccess { callback = "ChromeXt.post('script_export', ${it});" }
+                .onFailure {
+                  callback =
+                      "ChromeXt.post('script_error', ${JSONObject(mapOf("message" to "Export failed: ${it.message}"))});"
+                }
+          } else if (data.has("import")) {
+            val sources = data.getJSONArray("import")
+            var imported = 0
+            var failed = 0
+            for (i in 0 until sources.length()) {
+              val script = parseScript(sources.optString(i))
+              if (script == null) {
+                failed++
+                continue
+              }
+              ScriptDbManager.insert(script)
+              ScriptDbManager.scripts.removeAll { it.id == script.id }
+              ScriptDbManager.scripts.add(script)
+              imported++
+            }
+            callback =
+                "ChromeXt.post('script_imported', ${JSONObject(mapOf("imported" to imported, "failed" to failed))});"
+          } else if (data.has("reinstall")) {
+            val idsJson = data.getJSONArray("reinstall")
+            val ids = Array(idsJson.length()) { idsJson.getString(it) }
+            Chrome.IO.submit {
+              var updated = 0
+              var failed = 0
+              ids.forEach { id ->
+                val oldScript = ScriptDbManager.scripts.find { it.id == id }
+                val installUrl = oldScript?.meta?.let { installUrlFromMeta(it) } ?: ""
+                if (oldScript == null || installUrl.isEmpty()) {
+                  failed++
+                  return@forEach
+                }
+                runCatching {
+                      val source = setSourceDisabled(downloadText(installUrl), oldScript.disabled)
+                      val newScript = parseScript(source, oldScript.storage?.toString())
+                      if (newScript == null) {
+                        failed++
+                      } else {
+                        ScriptDbManager.insert(newScript)
+                        ScriptDbManager.scripts.removeAll { it.id == oldScript.id || it.id == newScript.id }
+                        ScriptDbManager.scripts.add(newScript)
+                        updated++
+                      }
+                    }
+                    .onFailure { failed++ }
+              }
+              postToPage(
+                  "script_reinstalled",
+                  JSONObject(mapOf("updated" to updated, "failed" to failed)),
+                  currentTab,
+                  frameId)
+            }
+          } else if (data.has("source")) {
             val script =
                 parseScript(
                     data.getString("source"),

@@ -85,7 +85,7 @@ function createNode(tag, className, text) {
 const scrollbarTimers = new WeakMap();
 
 function bindAutoScrollbar(root = document) {
-  root.querySelectorAll("pre,.cx-dialog,.cx-stats,.cx-pill-list").forEach((node) => {
+  root.querySelectorAll("pre,.cx-dialog").forEach((node) => {
     if (node.dataset.cxScrollbar === "1") return;
     node.dataset.cxScrollbar = "1";
     node.addEventListener(

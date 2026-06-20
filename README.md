@@ -12,9 +12,10 @@ Highlights:
 
 - Xiaomi Browser packages and MIUI / HyperOS WebView hook path.
 - More reliable injection on cold start, restore, history navigation, WebView attach, and Activity resume.
-- Local script manager at `https://chromext.local/`, including mobile-friendly rule editing, source-on-demand, per-script enable switches, and runtime script menus.
+- Local script manager at `https://chromext.local/`, including mobile-friendly rule editing, source-on-demand, per-script enable switches, import/export backup, single-script reinstall, batch reinstall, and runtime script menus.
 - Runtime floating script panel with per-page userscript commands and quick exclude actions.
 - Modern `.user.js` install prompt with reinstall detection and feedback.
+- Script exports are written to `Download/ChromeXt/` as `chromext-userscripts-*.json` and can be imported back from the manager.
 
 ## Build
 

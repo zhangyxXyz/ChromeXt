@@ -42,6 +42,7 @@ object Chrome {
   private var mTab: WeakReference<Any>? = null
   private var devToolsReady = false
   private var settingsReceiverRegistered = false
+  private var settingsSyncedFromModule = false
 
   var isBrave = false
   var isDev = false
@@ -61,7 +62,7 @@ object Chrome {
   fun init(ctx: Context, packageName: String? = null) {
     val initialized = mContext != null
     mContext = WeakReference(ctx)
-    syncSettingsFromModule(ctx)
+    syncSettingsFromModule(ctx, force = !initialized)
     registerSettingsReceiver(ctx)
 
     if (initialized || packageName == null) return
@@ -144,20 +145,31 @@ object Chrome {
     settingsReceiverRegistered = true
   }
 
-  private fun syncSettingsFromModule(ctx: Context) {
+  fun syncSettingsFromModule(ctx: Context = getContext(), force: Boolean = false) {
+    if (settingsSyncedFromModule && !force) return
     runCatching {
+          val providerSettings =
+              ctx.contentResolver.call(
+                  Uri.parse("content://org.matrix.chromext.settings"), "settings", null, null)
           val modulePref = XSharedPreferences(BuildConfig.APPLICATION_ID, "ChromeXt")
           modulePref.reload()
           val editor = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).edit()
-          if (modulePref.contains("runtime_launcher_enabled")) {
+          if (providerSettings?.containsKey("runtime_launcher_enabled") == true) {
+            editor.putBoolean(
+                "runtime_launcher_enabled",
+                providerSettings.getBoolean("runtime_launcher_enabled", true))
+          } else if (modulePref.contains("runtime_launcher_enabled")) {
             editor.putBoolean(
                 "runtime_launcher_enabled",
                 modulePref.getBoolean("runtime_launcher_enabled", true))
           }
-          if (modulePref.contains("language")) {
+          if (providerSettings?.containsKey("language") == true) {
+            editor.putString("language", providerSettings.getString("language", "system"))
+          } else if (modulePref.contains("language")) {
             editor.putString("language", modulePref.getString("language", "system"))
           }
           editor.apply()
+          settingsSyncedFromModule = true
         }
         .onFailure { Log.d("Failed to sync module settings: ${it.message}") }
   }

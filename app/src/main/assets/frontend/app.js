@@ -12,19 +12,24 @@ const state = {
 
 const els = {
   back: $("#back"),
+  batchReinstall: $("#batch-reinstall"),
   delete: $("#delete"),
   details: $("#details"),
   enabledToggle: $("#enabled-toggle"),
   excludeEditor: $("#exclude-editor"),
+  exportScripts: $("#export-scripts"),
   grantCount: $("#grant-count"),
   grantList: $("#grant-list"),
   includeEditor: $("#include-editor"),
   includeList: $("#include-list"),
+  importFile: $("#import-file"),
+  importScripts: $("#import-scripts"),
   list: $("#script-list"),
   matchCount: $("#match-count"),
   matchEditor: $("#match-editor"),
   matchList: $("#match-list"),
   newScript: $("#new-script"),
+  reinstall: $("#reinstall"),
   save: $("#save"),
   search: $("#search"),
   source: $("#source"),
@@ -42,7 +47,7 @@ const fallbackMessages = {
 };
 
 let messages = fallbackMessages;
-let languageSetting = "system";
+let languageSetting = globalThis.__ChromeXtLanguage || "system";
 let activeLanguage = resolveLanguage(languageSetting);
 
 function resolveLanguage(value = "system") {
@@ -161,6 +166,10 @@ function installUrlFromMeta(meta = "") {
   return "";
 }
 
+function reinstallableIds(ids = state.ids) {
+  return ids.filter((id) => installUrlFromMeta(state.metas.get(id) || ""));
+}
+
 function copyInstallUrl(meta, label) {
   const url = installUrlFromMeta(meta);
   if (!url) {
@@ -262,6 +271,9 @@ function renderList() {
     const meta = state.metas.get(id) || "";
     return `${id}\n${meta}`.toLowerCase().includes(needle);
   });
+
+  els.batchReinstall.disabled = reinstallableIds(ids).length === 0;
+  els.exportScripts.disabled = state.ids.length === 0;
 
   if (ids.length === 0) {
     els.status.textContent = needle ? t("noSearchResults") : t("noScripts");
@@ -385,6 +397,63 @@ function saveMeta(id, meta) {
   send("userscript", JSON.stringify({ id, meta }));
 }
 
+function requestReinstall(ids) {
+  const candidates = reinstallableIds(ids);
+  if (candidates.length === 0) {
+    els.status.textContent = t("noReinstallableScripts");
+    return;
+  }
+  if (!confirm(t("reinstallConfirm", { count: candidates.length }))) return;
+  els.status.textContent = t("reinstallingCount", { count: candidates.length });
+  els.batchReinstall.disabled = true;
+  els.reinstall.disabled = true;
+  send("userscript", JSON.stringify({ reinstall: candidates }));
+}
+
+function exportScripts() {
+  if (state.ids.length === 0) return;
+  els.status.textContent = t("exportingScripts");
+  send("userscript", JSON.stringify({ export: true }));
+}
+
+function saveExportFile(detail = {}) {
+  els.status.textContent = t("exportedScripts", {
+    count: detail.count || 0,
+    path: detail.path || "",
+  });
+}
+
+function sourcesFromImportText(text) {
+  const trimmed = text.trim();
+  if (!trimmed) return [];
+  try {
+    const data = JSON.parse(trimmed);
+    const scripts = Array.isArray(data) ? data : data.scripts;
+    if (Array.isArray(scripts)) {
+      return scripts
+        .map((item) => (typeof item === "string" ? item : item?.source))
+        .filter((source) => typeof source === "string" && source.trim());
+    }
+  } catch {}
+  return trimmed.includes("// ==UserScript==") ? [text] : [];
+}
+
+async function importSelectedFiles() {
+  const files = Array.from(els.importFile.files || []);
+  els.importFile.value = "";
+  if (files.length === 0) return;
+  const sources = [];
+  for (const file of files) {
+    sources.push(...sourcesFromImportText(await file.text()));
+  }
+  if (sources.length === 0) {
+    els.status.textContent = t("importNoScripts");
+    return;
+  }
+  els.status.textContent = t("importingScripts", { count: sources.length });
+  send("userscript", JSON.stringify({ import: sources }));
+}
+
 function toggleScript(id, enabled) {
   const meta = state.metas.get(id) || "";
   const nextMeta = setMetaEnabled(meta, enabled);
@@ -415,6 +484,7 @@ function setOverview(id, updateHistory = true) {
   els.enabledToggle.disabled = id.length === 0;
   els.save.disabled = true;
   els.delete.disabled = id.length === 0;
+  els.reinstall.disabled = !installUrlFromMeta(meta);
   els.viewSource.disabled = id.length === 0;
   renderDetails(meta);
   document.body.classList.add("editing");
@@ -436,6 +506,7 @@ function setEditor({ id = "", source = "" }, updateHistory = true) {
   els.enabledToggle.disabled = id.length === 0;
   els.save.disabled = true;
   els.delete.disabled = id.length === 0;
+  els.reinstall.disabled = !installUrlFromMeta(meta);
   els.viewSource.disabled = false;
   renderDetails(meta);
   setSourceVisible(true);
@@ -529,7 +600,9 @@ ChromeXt?.addEventListener("script_meta", (event) => {
     return;
   }
   if (state.selectedId && state.metas.has(state.selectedId) && !state.sourceVisible) {
-    renderDetails(state.metas.get(state.selectedId));
+    const meta = state.metas.get(state.selectedId);
+    renderDetails(meta);
+    els.reinstall.disabled = !installUrlFromMeta(meta);
   }
   renderList();
 });
@@ -542,6 +615,25 @@ ChromeXt?.addEventListener("script_saved", (event) => {
   els.save.disabled = false;
   send("userscript", "");
   if (id) send("userscript", JSON.stringify({ read: id }));
+});
+ChromeXt?.addEventListener("script_export", (event) => saveExportFile(event.detail || {}));
+ChromeXt?.addEventListener("script_imported", (event) => {
+  const detail = event.detail || {};
+  els.status.textContent = t("importedScripts", {
+    count: detail.imported || 0,
+    failed: detail.failed || 0,
+  });
+  send("userscript", "");
+});
+ChromeXt?.addEventListener("script_reinstalled", (event) => {
+  const detail = event.detail || {};
+  els.status.textContent = t("reinstalledScripts", {
+    count: detail.updated || 0,
+    failed: detail.failed || 0,
+  });
+  els.batchReinstall.disabled = false;
+  els.reinstall.disabled = !installUrlFromMeta(state.metas.get(state.selectedId) || "");
+  send("userscript", "");
 });
 ChromeXt?.addEventListener("script_meta_saved", (event) => {
   const id = event.detail?.id || state.selectedId;
@@ -562,8 +654,13 @@ ChromeXt?.addEventListener("script_error", (event) => {
 els.back.addEventListener("click", () => {
   showListView();
 });
+els.batchReinstall.addEventListener("click", () => requestReinstall(state.ids));
 els.delete.addEventListener("click", deleteScript);
+els.exportScripts.addEventListener("click", exportScripts);
+els.importFile.addEventListener("change", importSelectedFiles);
+els.importScripts.addEventListener("click", () => els.importFile.click());
 els.newScript.addEventListener("click", newScript);
+els.reinstall.addEventListener("click", () => requestReinstall([state.selectedId]));
 els.save.addEventListener("click", saveScript);
 els.search.addEventListener("input", renderList);
 els.viewSource.addEventListener("click", openSource);

@@ -193,10 +193,13 @@
     try {
       dock();
       (document.body || document.documentElement).appendChild(button);
-      if (ChromeXt) ChromeXt.dispatch("runtimeLauncher", { read: true });
     } catch {
       setTimeout(mount, 100);
     }
+  }
+
+  function requestSettings() {
+    if (ChromeXt) ChromeXt.dispatch("runtimeLauncher", { read: true });
   }
 
   addEventListener(
@@ -226,5 +229,8 @@
     });
   }
 
-  mount();
+  requestSettings();
+  if (!ChromeXt) {
+    mount();
+  }
 })();

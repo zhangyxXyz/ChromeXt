@@ -28,6 +28,27 @@
             autocomplete="off" />
         </label>
 
+        <div class="library-actions">
+          <button id="import-scripts" class="ghost-inline" type="button" data-i18n="importScripts">
+            Import
+          </button>
+          <button id="export-scripts" class="ghost-inline" type="button" data-i18n="exportScripts">
+            Export
+          </button>
+          <button
+            id="batch-reinstall"
+            class="ghost-inline"
+            type="button"
+            data-i18n="batchReinstall">
+            Batch reinstall
+          </button>
+          <input
+            id="import-file"
+            type="file"
+            accept=".json,.js,.user.js,text/*,application/json"
+            multiple />
+        </div>
+
         <div id="status" class="status" data-i18n="connecting">Connecting to ChromeXt...</div>
         <div id="script-list" class="script-list"></div>
       </section>
@@ -50,6 +71,9 @@
           <span id="match-count">0 matches</span>
           <span id="grant-count">0 grants</span>
           <button id="view-source" class="ghost-inline" type="button" disabled data-i18n="source">Source</button>
+          <button id="reinstall" class="ghost-inline" type="button" disabled data-i18n="reinstall">
+            Reinstall
+          </button>
           <button id="delete" class="danger-button" type="button" disabled data-i18n="delete">Delete</button>
         </div>
 

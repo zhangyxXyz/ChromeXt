@@ -86,6 +86,29 @@ button {
   margin-bottom: 18px;
 }
 
+.library-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.library-actions::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.library-actions .ghost-inline {
+  flex: 0 0 auto;
+}
+
+#import-file {
+  display: none;
+}
+
 .eyebrow,
 .editor-title p {
   margin: 0 0 4px;
@@ -143,7 +166,8 @@ h2 {
 }
 
 .primary-button:disabled,
-.danger-button:disabled {
+.danger-button:disabled,
+.ghost-inline:disabled {
   opacity: 0.45;
 }
 
