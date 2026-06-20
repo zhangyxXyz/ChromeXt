@@ -120,7 +120,7 @@ object PageMenuHook : BaseHook() {
         }
         "org.matrix.chromext:id/developer_tools_id" -> Listener.on("inspectPages")
         "org.matrix.chromext:id/eruda_console_id" ->
-            UserScriptProxy.evaluateJavascript(Local.openEruda)
+            UserScriptProxy.evaluateJavascript(Local.openRuntimePanel)
         "${ctx.packageName}:id/reload_menu_id" -> {
           val isLoading = proxy.mIsLoading.get(Chrome.getTab()) as Boolean
           if (!isLoading) return Listener.on("userAgentSpoof", getUrl()) != null
@@ -405,7 +405,7 @@ object PageMenuHook : BaseHook() {
                   buildModelForStandardMenuItem.invoke(
                       it.thisObject,
                       R.id.eruda_console_id,
-                      R.string.main_menu_eruda_console,
+                      R.string.main_menu_script_panel,
                       R.drawable.ic_devtools))
 
           val menusToAdd = mutableListOf<Any>()

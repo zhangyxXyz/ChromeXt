@@ -76,6 +76,11 @@ button {
   gap: 12px;
 }
 
+.editor-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+}
+
 .topbar {
   justify-content: space-between;
   margin-bottom: 18px;
@@ -134,6 +139,7 @@ h2 {
   background: var(--accent);
   color: #ffffff;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .primary-button:disabled,
@@ -180,7 +186,7 @@ textarea:focus {
 }
 
 .status {
-  margin: 14px 0;
+  margin: 14px 0 14px 12px;
   color: var(--muted);
   font-size: 13px;
 }
@@ -192,13 +198,26 @@ textarea:focus {
 }
 
 .script-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   min-width: 0;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: var(--text);
-  padding: 12px;
+  padding: 8px 10px 8px 12px;
+  text-align: left;
+}
+
+.script-open {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  padding: 4px 0;
   text-align: left;
 }
 
@@ -207,21 +226,72 @@ textarea:focus {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
-.script-item strong,
-.script-item span {
+.script-open strong,
+.script-open span {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.script-item strong {
+.script-open strong {
   margin-bottom: 4px;
 }
 
-.script-item span {
+.script-open span {
   color: var(--muted);
   font-size: 12px;
+}
+
+.switch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 48px;
+  height: 32px;
+}
+
+.switch input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.switch span {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  border-radius: 999px;
+  background: var(--line);
+  transition:
+    background 0.16s ease,
+    opacity 0.16s ease;
+}
+
+.switch span::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 1px 3px rgba(23, 32, 38, 0.24);
+  transition: transform 0.16s ease;
+}
+
+.switch input:checked + span {
+  background: var(--accent);
+}
+
+.switch input:checked + span::after {
+  transform: translateX(18px);
+}
+
+.switch input:disabled + span {
+  opacity: 0.45;
 }
 
 .editor-pane {
@@ -237,6 +307,17 @@ textarea:focus {
 .editor-title {
   min-width: 0;
   flex: 1;
+}
+
+.editor-title p,
+.editor-title h2 {
+  min-width: 0;
+}
+
+.editor-title p {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .meta-strip {

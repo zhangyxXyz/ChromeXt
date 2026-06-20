@@ -19,6 +19,6 @@
 	<item
 		android:id="@+id/eruda_console_id"
 		android:visible="false"
-		android:title="@string/main_menu_eruda_console"
+		android:title="@string/main_menu_script_panel"
 		android:icon="@drawable/ic_devtools" />
 </menu>

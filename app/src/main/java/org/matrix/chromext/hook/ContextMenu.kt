@@ -25,7 +25,7 @@ object ContextMenuHook : BaseHook() {
   val erudaMenuId = 31415926
   private var text: WeakReference<TextView>? = null
 
-  private fun openEruda(url: String) {
+  private fun openChromeXtMenu(url: String) {
     if (WebViewHook.isInit) {
       val webSettings = Chrome.getTab()?.invokeMethod { name == "getSettings" }
       if (webSettings == null) return
@@ -41,13 +41,13 @@ object ContextMenuHook : BaseHook() {
       val sandBoxed = shouldBypassSandbox(url)
       Chrome.evaluateJavascript(listOf("Symbol.installScript(true);"), null, null, sandBoxed)
     } else {
-      Chrome.evaluateJavascript(listOf(Local.openEruda))
+      Chrome.evaluateJavascript(listOf(Local.openRuntimePanel))
     }
   }
 
   private val clickListnerFactory = { mode: ActionMode, url: String ->
     MenuItem.OnMenuItemClickListener {
-      openEruda(url)
+      openChromeXtMenu(url)
       mode.finish()
       true
     }
@@ -69,7 +69,7 @@ object ContextMenuHook : BaseHook() {
           val titleId =
               if (isChromeXtFrontEnd(url)) R.string.main_menu_developer_tools
               else if (isUserScript(url)) R.string.main_menu_install_script
-              else R.string.main_menu_eruda_console
+              else R.string.main_menu_script_panel
           val erudaMenu = menu.add(titleId)
           val mId = erudaMenu::class.java.getDeclaredField("mId")
           mId.setAccessible(true)
@@ -96,7 +96,7 @@ object ContextMenuHook : BaseHook() {
       textView!!.layoutParams = sampleView.layoutParams
       textView!!.typeface = sampleView.typeface
       textView!!.setOnClickListener {
-        openEruda(Chrome.getUrl()!!)
+        openChromeXtMenu(Chrome.getUrl()!!)
         popupWindow.dismiss()
       }
       view.addView(textView!!, view.childCount)
@@ -132,7 +132,7 @@ object ContextMenuHook : BaseHook() {
               val titleId =
                   if (isChromeXtFrontEnd(url)) R.string.main_menu_developer_tools
                   else if (isUserScript(url)) R.string.main_menu_install_script
-                  else R.string.main_menu_eruda_console
+                  else R.string.main_menu_script_panel
               text?.get()?.setText(titleId)
             }
           }
@@ -178,7 +178,7 @@ object ContextMenuHook : BaseHook() {
             val contentView = mContentView.get(it.thisObject) as ViewGroup
             val listener = OnClickListener {
               controller.invokeMethod { name == "finishActionMode" }
-              openEruda(url!!)
+              openChromeXtMenu(url!!)
             }
 
             val shareImageView = mShareImageView.get(popupWindow) as ImageView

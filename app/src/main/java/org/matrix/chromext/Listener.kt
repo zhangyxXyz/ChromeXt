@@ -376,6 +376,59 @@ object Listener {
           }
         }
       }
+      "runtimeLauncher" -> {
+        val pref = Chrome.getContext().getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+        val data = if (payload.isBlank()) JSONObject() else JSONObject(payload)
+        if (!data.optBoolean("read")) {
+          val side = if (data.optString("side") == "right") "right" else "left"
+          val top = data.optDouble("top", 58.0).coerceAtLeast(0.0)
+          pref.edit().putString("runtime_launcher_side", side).putFloat("runtime_launcher_top", top.toFloat()).apply()
+        }
+        val detail =
+            JSONObject(
+                mapOf(
+                    "side" to pref.getString("runtime_launcher_side", "left"),
+                    "top" to pref.getFloat("runtime_launcher_top", 58f).toDouble()))
+        callback =
+            "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeLauncherPosition', ${detail});"
+      }
+      "excludeScript" -> {
+        val data = JSONObject(payload)
+        val scriptId = data.getString("id")
+        val currentUrl = Chrome.getUrl(currentTab)
+        val script = ScriptDbManager.scripts.find { it.id == scriptId }
+        val host = runCatching { URL(currentUrl ?: "").host }.getOrNull()
+        if (script == null || host.isNullOrBlank()) {
+          callback =
+              "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeActionResult', {ok:false,message:'Failed to exclude current site'});"
+        } else {
+          val rule = data.optString("rule").takeIf { it.isNotBlank() } ?: "*://${host}/*"
+          val label = data.optString("label").takeIf { it.isNotBlank() } ?: host
+          if (script.exclude.contains(rule)) {
+            callback =
+                "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeActionResult', {ok:true,message:'Already excluded ${label}'});"
+          } else {
+            val marker = "// ==/UserScript=="
+            val meta =
+                if (script.meta.contains(marker)) {
+                  script.meta.replace(marker, "// @exclude ${rule}\n${marker}")
+                } else {
+                  script.meta + "// @exclude ${rule}\n"
+                }
+            val newScript = parseScript(meta + script.code, script.storage?.toString())
+            if (newScript != null) {
+              ScriptDbManager.insert(newScript)
+              ScriptDbManager.scripts.remove(script)
+              ScriptDbManager.scripts.add(newScript)
+              callback =
+                  "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeActionResult', {ok:true,message:'Excluded ${label}. Refresh to apply.'});"
+            } else {
+              callback =
+                  "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeActionResult', {ok:false,message:'Failed to update script metadata'});"
+            }
+          }
+        }
+      }
       "loadEruda" -> {
         val ctx = Chrome.getContext()
         val eruda = File(ctx.filesDir, "Eruda.js")

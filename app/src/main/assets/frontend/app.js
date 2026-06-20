@@ -7,12 +7,14 @@ const state = {
   source: "",
   dirty: false,
   sourceVisible: false,
+  skipNextMetaRefresh: false,
 };
 
 const els = {
   back: $("#back"),
   delete: $("#delete"),
   details: $("#details"),
+  enabledToggle: $("#enabled-toggle"),
   excludeEditor: $("#exclude-editor"),
   grantCount: $("#grant-count"),
   grantList: $("#grant-list"),
@@ -63,6 +65,10 @@ function metaValues(meta = "", key) {
   return Array.from(meta.matchAll(new RegExp(`^//\\s+@${key}\\s+(.+)$`, "gm"))).map((m) =>
     m[1].trim()
   );
+}
+
+function isScriptEnabled(meta = "") {
+  return !/^\/\/\s+@(disable|disabled)(\s+.*)?$/m.test(meta);
 }
 
 function decodeUnicodeEscapes(value = "") {
@@ -129,15 +135,31 @@ function renderList() {
   els.status.textContent = `${ids.length} 个脚本`;
   ids.forEach((id) => {
     const meta = state.metas.get(id) || "";
+    const row = document.createElement("div");
+    row.className = "script-item" + (id === state.selectedId ? " active" : "");
     const button = document.createElement("button");
-    button.className = "script-item" + (id === state.selectedId ? " active" : "");
+    button.className = "script-open";
     button.type = "button";
     button.innerHTML = `<strong></strong><span></span>`;
     button.querySelector("strong").textContent = scriptNameFromMeta(meta);
     button.querySelector("span").textContent = id;
     button.addEventListener("click", () => openOverview(id));
-    els.list.append(button);
+    row.append(button, createSwitch(isScriptEnabled(meta), (enabled) => toggleScript(id, enabled)));
+    els.list.append(row);
   });
+}
+
+function createSwitch(checked, onChange) {
+  const label = document.createElement("label");
+  label.className = "switch";
+  const input = document.createElement("input");
+  input.type = "checkbox";
+  input.checked = checked;
+  const track = document.createElement("span");
+  input.addEventListener("click", (event) => event.stopPropagation());
+  input.addEventListener("change", () => onChange(input.checked));
+  label.append(input, track);
+  return label;
 }
 
 function selectedIdFromHash() {
@@ -145,10 +167,19 @@ function selectedIdFromHash() {
   return params.get("source") || params.get("script") || "";
 }
 
-function setViewHash(kind, id) {
+function setViewHash(kind, id, replace = false) {
   if (!id) return;
   const next = `#${kind}=${encodeURIComponent(id)}`;
-  if (location.hash !== next) history.replaceState(null, "", next);
+  if (location.hash === next) return;
+  const stateData = { chromeXtManager: true, kind, id };
+  if (replace) history.replaceState(stateData, "", next);
+  else history.pushState(stateData, "", next);
+}
+
+function showListView(replace = true) {
+  setSourceVisible(false);
+  document.body.classList.remove("editing");
+  if (replace) history.replaceState({ chromeXtManager: true, kind: "list" }, "", location.pathname);
 }
 
 function setSourceVisible(visible) {
@@ -194,12 +225,39 @@ function replaceMetaRules(meta, replacements) {
   return output.join("\n").replace(/\n*$/, "\n");
 }
 
+function setMetaEnabled(meta, enabled) {
+  const lines = meta.replace(/\r\n/g, "\n").split("\n");
+  const output = lines.filter((line) => !/^\/\/\s+@(disable|disabled)(\s+.*)?$/.test(line));
+  if (!enabled) {
+    const endIndex = output.findIndex((line) => line.trim() === "// ==/UserScript==");
+    if (endIndex >= 0) output.splice(endIndex, 0, "// @disable");
+    else output.unshift("// @disable");
+  }
+  return output.join("\n").replace(/\n*$/, "\n");
+}
+
+function saveMeta(id, meta) {
+  send("userscript", JSON.stringify({ id, meta }));
+}
+
+function toggleScript(id, enabled) {
+  const meta = state.metas.get(id) || "";
+  const nextMeta = setMetaEnabled(meta, enabled);
+  state.metas.set(id, nextMeta);
+  state.skipNextMetaRefresh = true;
+  if (id === state.selectedId) {
+    els.enabledToggle.checked = enabled;
+    renderDetails(nextMeta);
+  }
+  saveMeta(id, nextMeta);
+}
+
 function markMetaDirty() {
   state.dirty = true;
   els.save.disabled = false;
 }
 
-function setOverview(id) {
+function setOverview(id, updateHistory = true) {
   const meta = state.metas.get(id) || "";
   state.selectedId = id;
   state.source = "";
@@ -208,16 +266,18 @@ function setOverview(id) {
   els.source.value = "";
   els.scriptId.textContent = id;
   els.scriptName.textContent = scriptNameFromMeta(meta);
+  els.enabledToggle.checked = isScriptEnabled(meta);
+  els.enabledToggle.disabled = id.length === 0;
   els.save.disabled = true;
   els.delete.disabled = id.length === 0;
   els.viewSource.disabled = id.length === 0;
   renderDetails(meta);
   document.body.classList.add("editing");
-  setViewHash("script", id);
+  if (updateHistory) setViewHash("script", id);
   renderList();
 }
 
-function setEditor({ id = "", source = "" }) {
+function setEditor({ id = "", source = "" }, updateHistory = true) {
   source = decodeUnicodeEscapes(source);
   state.selectedId = id;
   state.source = source;
@@ -227,13 +287,15 @@ function setEditor({ id = "", source = "" }) {
   els.source.value = source;
   els.scriptId.textContent = id || "新脚本";
   els.scriptName.textContent = scriptNameFromMeta(meta);
+  els.enabledToggle.checked = isScriptEnabled(meta);
+  els.enabledToggle.disabled = id.length === 0;
   els.save.disabled = true;
   els.delete.disabled = id.length === 0;
   els.viewSource.disabled = false;
   renderDetails(meta);
   setSourceVisible(true);
   document.body.classList.add("editing");
-  if (id) setViewHash("source", id);
+  if (id && updateHistory) setViewHash("source", id);
   renderList();
 }
 
@@ -274,7 +336,7 @@ function saveScript() {
       include: normalizeRuleEditorValue(els.includeEditor.value),
       exclude: normalizeRuleEditorValue(els.excludeEditor.value),
     });
-    send("userscript", JSON.stringify({ id: state.selectedId, meta: nextMeta }));
+    saveMeta(state.selectedId, nextMeta);
     return;
   }
   send(
@@ -317,7 +379,7 @@ ChromeXt?.addEventListener("script_meta", (event) => {
   const wantsSource = location.hash.startsWith("#source=");
   const hashedId = selectedIdFromHash();
   if (hashedId && state.ids.includes(hashedId) && !state.selectedId) {
-    setOverview(hashedId);
+    setOverview(hashedId, false);
     if (wantsSource) openSource();
     return;
   }
@@ -326,7 +388,7 @@ ChromeXt?.addEventListener("script_meta", (event) => {
   }
   renderList();
 });
-ChromeXt?.addEventListener("script_detail", (event) => setEditor(event.detail || {}));
+ChromeXt?.addEventListener("script_detail", (event) => setEditor(event.detail || {}, false));
 ChromeXt?.addEventListener("script_saved", (event) => {
   const id = event.detail?.id;
   if (id && !state.ids.includes(id)) state.ids.push(id);
@@ -341,6 +403,10 @@ ChromeXt?.addEventListener("script_meta_saved", (event) => {
   if (id) state.selectedId = id;
   state.dirty = false;
   els.save.disabled = true;
+  if (state.skipNextMetaRefresh) {
+    state.skipNextMetaRefresh = false;
+    return;
+  }
   send("userscript", "");
 });
 ChromeXt?.addEventListener("script_error", (event) => {
@@ -348,12 +414,18 @@ ChromeXt?.addEventListener("script_error", (event) => {
   els.save.disabled = false;
 });
 
-els.back.addEventListener("click", () => document.body.classList.remove("editing"));
+els.back.addEventListener("click", () => {
+  showListView();
+});
 els.delete.addEventListener("click", deleteScript);
 els.newScript.addEventListener("click", newScript);
 els.save.addEventListener("click", saveScript);
 els.search.addEventListener("input", renderList);
 els.viewSource.addEventListener("click", openSource);
+els.enabledToggle.addEventListener("change", () => {
+  if (!state.selectedId) return;
+  toggleScript(state.selectedId, els.enabledToggle.checked);
+});
 [els.matchEditor, els.includeEditor, els.excludeEditor].forEach((editor) => {
   editor.addEventListener("input", markMetaDirty);
 });
@@ -368,6 +440,19 @@ els.source.addEventListener("keydown", (event) => {
   const start = els.source.selectionStart;
   const end = els.source.selectionEnd;
   els.source.setRangeText("  ", start, end, "end");
+});
+
+window.addEventListener("popstate", () => {
+  const id = selectedIdFromHash();
+  if (!id || !state.ids.includes(id)) {
+    state.selectedId = "";
+    state.source = "";
+    showListView(false);
+    renderList();
+    return;
+  }
+  setOverview(id, false);
+  if (location.hash.startsWith("#source=")) openSource();
 });
 
 if (ChromeXt) send("userscript", "");

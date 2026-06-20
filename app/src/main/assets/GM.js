@@ -330,7 +330,9 @@ function GM_removeValueChangeListener(index) {
 // Kotlin separator
 
 function GM_unregisterMenuCommand(index) {
-  LockedChromeXt.unlock(key).commands[index].enabled = false;
+  const ChromeXt = LockedChromeXt.unlock(key);
+  ChromeXt.commands[index].enabled = false;
+  ChromeXt.dispatchEvent(new CustomEvent("commandsUpdated"));
 }
 // Kotlin separator
 
@@ -408,6 +410,8 @@ function GM_registerMenuCommand(title, listener, _accessKey = "Dummy") {
   );
   if (index != -1) {
     ChromeXt.commands[index].listener = listener;
+    ChromeXt.commands[index].enabled = true;
+    ChromeXt.dispatchEvent(new CustomEvent("commandsUpdated"));
     return index;
   }
   ChromeXt.commands.push({
@@ -416,6 +420,7 @@ function GM_registerMenuCommand(title, listener, _accessKey = "Dummy") {
     listener,
     enabled: true,
   });
+  ChromeXt.dispatchEvent(new CustomEvent("commandsUpdated"));
   return ChromeXt.commands.length - 1;
 }
 // Kotlin separator
@@ -1277,29 +1282,35 @@ GM.bootstrap = () => {
       };
     }
 
+    let executed = false;
+    const execute = () => {
+      if (executed) return;
+      executed = true;
+      GM_info.scriptHandler = "ChromeXt";
+      GM_info.version = "3.8.2";
+      Object.freeze(GM_info);
+      ChromeXt.scripts.push(GM_info);
+      meta.code();
+    };
+
     switch (meta["run-at"]) {
       case "document-start":
-        meta.code();
+        execute();
         break;
       case "document-end":
         if (document.readyState != "loading") {
-          meta.code();
+          execute();
         } else {
-          window.addEventListener("DOMContentLoaded", meta.code);
+          window.addEventListener("DOMContentLoaded", execute, { once: true });
         }
         break;
       default:
         if (document.readyState == "complete") {
-          meta.code();
+          execute();
         } else {
-          window.addEventListener("load", meta.code);
+          window.addEventListener("load", execute, { once: true });
         }
     }
-
-    GM_info.scriptHandler = "ChromeXt";
-    GM_info.version = "3.8.2";
-    Object.freeze(GM_info);
-    ChromeXt.scripts.push(GM_info);
   }
 };
 

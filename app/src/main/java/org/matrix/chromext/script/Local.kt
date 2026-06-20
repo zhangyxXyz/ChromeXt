@@ -95,6 +95,8 @@ object Local {
   val encoding: String
   val initChromeXt: String
   val openEruda: String
+  val openRuntimePanel: String
+  val installRuntimePanelLauncher: String
   val cspRule: String
   val cosmeticFilter: String
   val key = Random.nextDouble()
@@ -149,6 +151,21 @@ object Local {
         localScript[1]
             .replaceFirst("Symbol.ChromeXt", "Symbol." + name)
             .replaceFirst("ChromeXtUnlockKeyForEruda", key.toString())
+    openRuntimePanel =
+        ctx.assets
+            .open("runtime-panel.js")
+            .bufferedReader()
+            .use { it.readText() }
+            .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
+            .replace("ChromeXtRuntimeKey", key.toString())
+    installRuntimePanelLauncher =
+        "globalThis.__ChromeXtOpenRuntimePanel__ = () => {${openRuntimePanel}};\n" +
+            ctx.assets
+                .open("runtime-panel-launcher.js")
+                .bufferedReader()
+                .use { it.readText() }
+                .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
+                .replace("ChromeXtRuntimeKey", key.toString())
     cspRule = localScript[2]
     cosmeticFilter = localScript[3]
   }

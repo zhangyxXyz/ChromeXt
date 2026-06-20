@@ -45,9 +45,9 @@ object PageInfoHook : BaseHook() {
           controller!!.invokeMethod() { name == "destroy" }
         }
       } else {
-        title.setText(R.string.main_menu_eruda_console)
+        title.setText(R.string.main_menu_script_panel)
         infoRow.setOnClickListener {
-          UserScriptProxy.evaluateJavascript(Local.openEruda)
+          UserScriptProxy.evaluateJavascript(Local.openRuntimePanel)
           controller!!.invokeMethod() { name == "destroy" }
         }
       }

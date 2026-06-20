@@ -158,11 +158,13 @@ object ScriptDbManager {
     codes.clear()
     if (asyncEvaluation) codes.add(initScript)
     if (runScripts) {
-      val matchedScripts = scripts.filter { matching(it, url) && !(frameId != null && it.noframes) }
+      val matchedScripts =
+          scripts.filter { !it.disabled && matching(it, url) && !(frameId != null && it.noframes) }
       matchedScripts.forEach {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
           }
+      if (frameId == null) codes.add(Local.installRuntimePanelLauncher)
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
     if (asyncEvaluation)

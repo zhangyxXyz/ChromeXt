@@ -31,6 +31,7 @@ fun parseScript(input: String, storage: String? = null): Script? {
         val code = blockMatchGroup[2]?.value as String
         var storage: JSONObject? = null
         var noframes = false
+        var disabled = false
       }
   script.meta.split("\n").forEach {
     val metaMatchGroup = metaReg.matchEntire(it)?.groups
@@ -47,10 +48,12 @@ fun parseScript(input: String, storage: String? = null): Script? {
           "exclude" -> script.exclude.add(value)
           "require" -> script.require.add(value)
           "noframes" -> script.noframes = true
+          "disable", "disabled" -> script.disabled = true
         }
       } else {
         when (key) {
           "noframes" -> script.noframes = true
+          "disable", "disabled" -> script.disabled = true
         }
       }
     }
@@ -85,7 +88,8 @@ fun parseScript(input: String, storage: String? = null): Script? {
             script.code,
             script.storage,
             lib,
-            script.noframes)
+            script.noframes,
+            script.disabled)
     return parsed
   }
 }
