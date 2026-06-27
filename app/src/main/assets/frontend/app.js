@@ -57,6 +57,12 @@ function resolveLanguage(value = "system") {
 
 async function loadMessages() {
   activeLanguage = resolveLanguage(languageSetting);
+  if (globalThis.__ChromeXtI18n) {
+    const base = globalThis.__ChromeXtI18n.en || {};
+    const localized = activeLanguage === "en" ? {} : globalThis.__ChromeXtI18n[activeLanguage] || {};
+    messages = { ...fallbackMessages, ...base, ...localized };
+    return;
+  }
   const load = async (lang) => {
     const response = await fetch(`/i18n/${lang}.json`, { cache: "no-store" });
     if (!response.ok) throw new Error(`Failed to load i18n: ${lang}`);

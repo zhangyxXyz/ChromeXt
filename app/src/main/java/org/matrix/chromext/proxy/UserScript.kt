@@ -47,24 +47,30 @@ object UserScriptProxy {
       }
   private val getId = findMethodOrNull(tabImpl) { name == "getId" }
   private val mId =
-      (if (Chrome.isSamsung) tabWebContentsDelegateAndroidImpl else tabImpl)
-          .declaredFields
-          .run {
-            val target = find { it.name == "mId" }
-            if (target == null) {
-              val profile = Chrome.load("org.chromium.chrome.browser.profiles.Profile")
-              val windowAndroid = Chrome.load("org.chromium.ui.base.WindowAndroid")
-              var startIndex = indexOfFirst { it.type == gURL }
-              val endIndex = indexOfFirst {
-                it.type == profile ||
-                    it.type == ContextThemeWrapper::class.java ||
-                    it.type == windowAndroid
-              }
-              if (startIndex == -1 || startIndex > endIndex) startIndex = 0
-              slice(startIndex..endIndex - 1).findLast { it.type == Int::class.java }!!
-            } else target
-          }
-          .also { it.isAccessible = true }
+      if (getId != null) {
+        null
+      } else {
+        (if (Chrome.isSamsung) tabWebContentsDelegateAndroidImpl else tabImpl)
+            .declaredFields
+            .run {
+              val target = find { it.name == "mId" }
+              if (target == null) {
+                val profile = Chrome.load("org.chromium.chrome.browser.profiles.Profile")
+                val windowAndroid = Chrome.load("org.chromium.ui.base.WindowAndroid")
+                var startIndex = indexOfFirst { it.type == gURL }
+                var endIndex = indexOfFirst {
+                  it.type == profile ||
+                      it.type == ContextThemeWrapper::class.java ||
+                      it.type == windowAndroid
+                }
+                if (endIndex == -1) endIndex = size
+                if (startIndex == -1 || startIndex > endIndex) startIndex = 0
+                slice(startIndex until endIndex).findLast { it.type == Int::class.java }
+                    ?: throw NoSuchFieldException("${tabImpl.name}.mId")
+              } else target
+            }
+            .also { it.isAccessible = true }
+      }
   val mTab = findField(tabWebContentsDelegateAndroidImpl) { type == tabImpl }
   val mIsLoading =
       tabImpl.declaredFields
@@ -77,7 +83,8 @@ object UserScriptProxy {
               val startIndex =
                   maxOf(
                       indexOfFirst { it.type == webContents },
-                      indexOfFirst { it.type == loadUrlParams })
+                      indexOfFirst { it.type == loadUrlParams },
+                  )
               slice(startIndex..size - 1).find {
                 it.type == Boolean::class.java && !Modifier.isStatic(it.modifiers)
               }!!
@@ -99,7 +106,7 @@ object UserScriptProxy {
   }
 
   fun getTabId(tab: Any): String {
-    val id = if (getId != null) getId.invoke(tab)!! else mId.get(tab)!!
+    val id = if (getId != null) getId.invoke(tab)!! else mId!!.get(tab)!!
     return id.toString()
   }
 

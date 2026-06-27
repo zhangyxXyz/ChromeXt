@@ -740,7 +740,7 @@
     }
     addRow("icon:manager", t("managerTitle"), t("scriptManagerSubtitle"), () => {
       host.remove();
-      location.href = "https://chromext.local/?from=runtime";
+      location.href = globalThis.__ChromeXtManagerUrl || "https://chromext.local/?from=runtime";
     }, false, true);
   }
 

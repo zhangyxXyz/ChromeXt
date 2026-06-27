@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 	<queries>
+		<package android:name="app.vanadium.browser"/>
 		<package android:name="com.android.browser"/>
 		<package android:name="com.android.chrome"/>
 		<package android:name="com.brave.browser"/>
@@ -11,6 +12,7 @@
 		<package android:name="com.chrome.dev"/>
 		<package android:name="com.coccoc.trinhduyet"/>
 		<package android:name="com.coccoc.trinhduyet_beta"/>
+		<package android:name="com.herond.android.browser"/>
 		<package android:name="com.kiwibrowser.browser"/>
 		<package android:name="com.mi.globalbrowser"/>
 		<package android:name="com.microsoft.emmx"/>
@@ -22,7 +24,9 @@
 		<package android:name="com.sec.android.app.sbrowser.beta"/>
 		<package android:name="com.vivaldi.browser"/>
 		<package android:name="com.vivaldi.browser.snapshot"/>
+		<package android:name="org.axpos.aosmium"/>
 		<package android:name="org.bromite.bromite"/>
+		<package android:name="org.chromium.chrome"/>
 		<package android:name="org.chromium.thorium"/>
 		<package android:name="org.cromite.cromite"/>
 		<package android:name="org.greatfire.freebrowser"/>

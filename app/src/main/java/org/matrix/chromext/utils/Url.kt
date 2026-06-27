@@ -4,6 +4,7 @@ import android.net.Uri
 import android.provider.OpenableColumns
 import kotlin.text.Regex
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.LocalServer
 import org.matrix.chromext.script.Script
 
 const val ERUD_URL = "https://cdn.jsdelivr.net/npm/eruda"
@@ -75,10 +76,12 @@ val invalidUserScriptUrls = mutableListOf<String>()
 
 fun isUserScript(url: String?, path: String? = null): Boolean {
   if (url == null) return false
-  if (url.endsWith(".user.js") ||
-      (Chrome.isEdge &&
-          url.endsWith(".js") &&
-          (url.startsWith("file://") || url.startsWith("content://")))) {
+  if (
+      url.endsWith(".user.js") ||
+          (Chrome.isEdge &&
+              url.endsWith(".js") &&
+              (url.startsWith("file://") || url.startsWith("content://")))
+  ) {
     if (invalidUserScriptUrls.contains(url)) return false
     invalidUserScriptDomains.forEach { if (url.startsWith("https://" + it) == true) return false }
     return true
@@ -105,12 +108,20 @@ fun resolveContentUrl(url: String): String {
 private val trustedHosts =
     listOf("jingmatrix.github.io", "jianyu-ma.onrender.com", "jianyu-ma.netlify.app")
 private const val LOCAL_FRONT_END = "https://chromext.local/"
+private const val CHROME_LOCAL_FRONT_END = "https://chrome.local/"
 
 fun isChromeXtFrontEnd(url: String?): Boolean {
   if (url == null) return false
-  if (url == LOCAL_FRONT_END ||
-      url.startsWith("${LOCAL_FRONT_END}?") ||
-      url.startsWith("${LOCAL_FRONT_END}#")) return true
+  if (LocalServer.isFrontEndUrl(url)) return true
+  if (
+      url == LOCAL_FRONT_END ||
+          url == CHROME_LOCAL_FRONT_END ||
+          url.startsWith("${LOCAL_FRONT_END}?") ||
+          url.startsWith("${LOCAL_FRONT_END}#") ||
+          url.startsWith("${CHROME_LOCAL_FRONT_END}?") ||
+          url.startsWith("${CHROME_LOCAL_FRONT_END}#")
+  )
+      return true
   if (!url.endsWith("/ChromeXt/")) return false
   trustedHosts.forEach { if (url == "https://" + it + "/ChromeXt/") return true }
   return false
@@ -118,12 +129,18 @@ fun isChromeXtFrontEnd(url: String?): Boolean {
 
 fun isLocalChromeXtFrontEnd(url: String?): Boolean {
   return url == LOCAL_FRONT_END ||
+      url == CHROME_LOCAL_FRONT_END ||
       url?.startsWith("${LOCAL_FRONT_END}?") == true ||
-      url?.startsWith("${LOCAL_FRONT_END}#") == true
+      url?.startsWith("${LOCAL_FRONT_END}#") == true ||
+      url?.startsWith("${CHROME_LOCAL_FRONT_END}?") == true ||
+      url?.startsWith("${CHROME_LOCAL_FRONT_END}#") == true ||
+      LocalServer.isFrontEndUrl(url)
 }
 
 fun isLocalChromeXtResource(url: String?): Boolean {
-  return url?.startsWith(LOCAL_FRONT_END) == true
+  return url?.startsWith(LOCAL_FRONT_END) == true ||
+      url?.startsWith(CHROME_LOCAL_FRONT_END) == true ||
+      LocalServer.isFrontEndUrl(url)
 }
 
 private val sandboxHosts = listOf("raw.githubusercontent.com", "gist.githubusercontent.com")

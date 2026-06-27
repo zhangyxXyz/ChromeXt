@@ -8,6 +8,7 @@ import kotlin.random.Random
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.LocalServer
 import org.matrix.chromext.Resource
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.randomString
@@ -90,13 +91,32 @@ object GM {
 object Local {
 
   val promptInstallUserScript: String
+    get() {
+      val ctx = Chrome.getContext()
+      Resource.enrich(ctx)
+      val css =
+          JSONArray(
+              ctx.assets.open("editor.css").bufferedReader().use { it.readText() }.split("\n\n"))
+      return editorScript(ctx, i18n(ctx), css)
+    }
   val customizeDevTool: String
   val eruda: String
   val encoding: String
   val initChromeXt: String
   val openEruda: String
   val openRuntimePanel: String
+    get() = runtimePanelScript(Chrome.getContext(), i18n(Chrome.getContext()))
   val installRuntimePanelLauncher: String
+    get() {
+      val ctx = Chrome.getContext()
+      return "globalThis.__ChromeXtOpenRuntimePanel__ = () => {${openRuntimePanel}};\n" +
+          ctx.assets
+              .open("runtime-panel-launcher.js")
+              .bufferedReader()
+              .use { it.readText() }
+              .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
+              .replace("ChromeXtRuntimeKey", key.toString())
+    }
   val cspRule: String
   val cosmeticFilter: String
   val key = Random.nextDouble()
@@ -114,15 +134,7 @@ object Local {
     var css =
         JSONArray(
             ctx.assets.open("editor.css").bufferedReader().use { it.readText() }.split("\n\n"))
-    val i18n =
-        JSONObject(
-            mapOf(
-                "en" to JSONObject(ctx.assets.open("frontend/i18n/en.json").bufferedReader().use { it.readText() }),
-                "zh" to JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })))
-    promptInstallUserScript =
-        "globalThis._editor_style = ${css}[0];\n" +
-            "globalThis.__chromextI18n = ${i18n};\n" +
-            ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
+    val i18n = i18n(ctx)
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
     css =
         JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
@@ -157,25 +169,31 @@ object Local {
         localScript[1]
             .replaceFirst("Symbol.ChromeXt", "Symbol." + name)
             .replaceFirst("ChromeXtUnlockKeyForEruda", key.toString())
-    openRuntimePanel =
-        "globalThis.__chromextI18n = ${i18n};\n" +
-            ctx.assets
-                .open("runtime-panel.js")
-                .bufferedReader()
-                .use { it.readText() }
-                .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
-                .replace("ChromeXtRuntimeKey", key.toString())
-    installRuntimePanelLauncher =
-        "globalThis.__ChromeXtOpenRuntimePanel__ = () => {${openRuntimePanel}};\n" +
-            ctx.assets
-                .open("runtime-panel-launcher.js")
-                .bufferedReader()
-                .use { it.readText() }
-                .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
-                .replace("ChromeXtRuntimeKey", key.toString())
     cspRule = localScript[2]
     cosmeticFilter = localScript[3]
   }
+
+  private fun i18n(ctx: Context): JSONObject =
+      JSONObject(
+          mapOf(
+              "en" to JSONObject(ctx.assets.open("frontend/i18n/en.json").bufferedReader().use { it.readText() }),
+              "zh" to JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })))
+
+  private fun editorScript(ctx: Context, i18n: JSONObject, css: JSONArray): String =
+      "globalThis._editor_style = ${css}[0];\n" +
+          "globalThis.__chromextI18n = ${i18n};\n" +
+          "globalThis.__ChromeXtManagerUrl = ${JSONObject.quote(LocalServer.managerUrl(ctx, "install"))};\n" +
+          ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
+
+  private fun runtimePanelScript(ctx: Context, i18n: JSONObject): String =
+      "globalThis.__chromextI18n = ${i18n};\n" +
+          "globalThis.__ChromeXtManagerUrl = ${JSONObject.quote(LocalServer.managerUrl(ctx, "runtime"))};\n" +
+          ctx.assets
+              .open("runtime-panel.js")
+              .bufferedReader()
+              .use { it.readText() }
+              .replace("Symbol.ChromeXtRuntimeName", "Symbol." + name)
+              .replace("ChromeXtRuntimeKey", key.toString())
 
   fun getErudaVersion(ctx: Context = Chrome.getContext(), versionText: String? = null): String? {
     val eruda = File(ctx.filesDir, "Eruda.js")

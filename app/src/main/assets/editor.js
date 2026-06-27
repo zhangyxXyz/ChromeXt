@@ -135,7 +135,7 @@ function showInstallResult(detail) {
       confirm.disabled = false;
       confirm.textContent = t("openScriptManager");
       confirm.onclick = () => {
-        location.href = "https://chromext.local/";
+        location.href = globalThis.__ChromeXtManagerUrl || "https://chromext.local/";
       };
     }
   } else {

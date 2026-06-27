@@ -132,6 +132,14 @@ object Chrome {
             if (intent.hasExtra("language")) {
               editor.putString("language", intent.getStringExtra("language") ?: "system")
             }
+            if (intent.hasExtra(LocalServer.PREF_LOCAL_SERVER_ENABLED)) {
+              val localServerEnabled =
+                  intent.getBooleanExtra(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
+              editor.putBoolean(
+                  LocalServer.PREF_LOCAL_SERVER_ENABLED,
+                  localServerEnabled)
+              if (!localServerEnabled) LocalServer.stop()
+            }
             editor.apply()
             syncRuntimeLauncherSettings(context)
           }
@@ -149,8 +157,12 @@ object Chrome {
     if (settingsSyncedFromModule && !force) return
     runCatching {
           val providerSettings =
-              ctx.contentResolver.call(
-                  Uri.parse("content://org.matrix.chromext.settings"), "settings", null, null)
+              runCatching {
+                    ctx.contentResolver.call(
+                        Uri.parse("content://org.matrix.chromext.settings"), "settings", null, null)
+                  }
+                  .onFailure { Log.d("Failed to read settings provider: ${it.message}") }
+                  .getOrNull()
           val modulePref = XSharedPreferences(BuildConfig.APPLICATION_ID, "ChromeXt")
           modulePref.reload()
           val editor = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).edit()
@@ -167,6 +179,21 @@ object Chrome {
             editor.putString("language", providerSettings.getString("language", "system"))
           } else if (modulePref.contains("language")) {
             editor.putString("language", modulePref.getString("language", "system"))
+          }
+          if (providerSettings?.containsKey(LocalServer.PREF_LOCAL_SERVER_ENABLED) == true) {
+            val localServerEnabled =
+                providerSettings.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
+            editor.putBoolean(
+                LocalServer.PREF_LOCAL_SERVER_ENABLED,
+                localServerEnabled)
+            if (!localServerEnabled) LocalServer.stop()
+          } else if (modulePref.contains(LocalServer.PREF_LOCAL_SERVER_ENABLED)) {
+            val localServerEnabled =
+                modulePref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
+            editor.putBoolean(
+                LocalServer.PREF_LOCAL_SERVER_ENABLED,
+                localServerEnabled)
+            if (!localServerEnabled) LocalServer.stop()
           }
           editor.apply()
           settingsSyncedFromModule = true

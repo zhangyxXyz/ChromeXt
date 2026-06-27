@@ -7,6 +7,7 @@ import android.net.http.HttpResponseCache
 import org.matrix.chromext.BuildConfig
 import org.matrix.chromext.Chrome
 import org.matrix.chromext.Listener
+import org.matrix.chromext.LocalServer
 import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
@@ -93,7 +94,8 @@ object UserScriptHook : BaseHook() {
                     val loadedVersionCode = version_code.get(null)
                     if (latestVersionCode != loadedVersionCode) {
                       Log.d(
-                          "Version codes mismatched for child services ${mServiceName.get(it.thisObject)}")
+                          "Version codes mismatched for child services ${mServiceName.get(it.thisObject)}"
+                      )
                       version_code.set(null, latestVersionCode)
                     }
                   }
@@ -128,9 +130,11 @@ object UserScriptHook : BaseHook() {
           // This should be the way to communicate with the front-end of ChromeXt
           val lineNumber = it.args[2] as Int
           val sourceId = it.args[3] as String
-          if (it.args[0] as Int == 0 &&
-              sourceId.startsWith("local://ChromeXt/init") &&
-              lineNumber == Local.anchorInChromeXt) {
+          if (
+              it.args[0] as Int == 0 &&
+                  sourceId.startsWith("local://ChromeXt/init") &&
+                  lineNumber == Local.anchorInChromeXt
+          ) {
             Listener.startAction(it.args[1] as String, proxy.getTab(it.thisObject), null, sourceId)
           } else {
             Log.d(
@@ -139,7 +143,8 @@ object UserScriptHook : BaseHook() {
                   2 -> "W"
                   3 -> "E"
                   else -> "V"
-                } + ": [${sourceId}@${lineNumber}] ${it.args[1]}")
+                } + ": [${sourceId}@${lineNumber}] ${it.args[1]}"
+            )
           }
         }
 
@@ -149,8 +154,22 @@ object UserScriptHook : BaseHook() {
         // public void loadUrl(LoadUrlParams params)
         .hookBefore {
           val url = proxy.parseUrl(it.args[0])!!
-          proxy.userAgentHook(url, it.args[0])
+          val rewritten = LocalServer.rewrite(url)
+          if (rewritten != null) {
+            Log.d("Rewrite local front-end ${url} to ${rewritten}")
+            it.args[0] = proxy.newLoadUrlParams(rewritten)
+          } else {
+            proxy.userAgentHook(url, it.args[0])
+          }
         }
+
+    proxy.loadUrl.hookBefore {
+      val url = proxy.parseUrl(it.args[0])!!
+      LocalServer.rewrite(url)?.let { rewritten ->
+        Log.d("Rewrite tab local front-end ${url} to ${rewritten}")
+        it.args[0] = proxy.newLoadUrlParams(rewritten)
+      }
+    }
 
     findMethod(proxy.chromeTabbedActivity, true) { name == "onResume" }
         .hookBefore { Chrome.init(it.thisObject as Context) }

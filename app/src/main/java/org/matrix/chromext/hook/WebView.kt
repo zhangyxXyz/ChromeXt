@@ -1,6 +1,7 @@
 package org.matrix.chromext.hook
 
 import android.app.Activity
+import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -126,7 +127,7 @@ object WebViewHook : BaseHook() {
   }
 
   private fun localResourcePath(url: String): String {
-    val path = url.removePrefix("https://chromext.local/").substringBefore("?").substringBefore("#")
+    val path = Uri.parse(url).path?.trimStart('/') ?: ""
     return if (path.length == 0) "frontend/index.html" else "frontend/${path}"
   }
 

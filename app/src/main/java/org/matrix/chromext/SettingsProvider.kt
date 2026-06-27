@@ -16,6 +16,9 @@ class SettingsProvider : ContentProvider() {
     return Bundle().apply {
       putBoolean("runtime_launcher_enabled", pref.getBoolean("runtime_launcher_enabled", true))
       putString("language", pref.getString("language", "system") ?: "system")
+      putBoolean(
+          LocalServer.PREF_LOCAL_SERVER_ENABLED,
+          pref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false))
     }
   }
 

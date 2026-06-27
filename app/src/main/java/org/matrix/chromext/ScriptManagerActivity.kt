@@ -3,10 +3,12 @@ package org.matrix.chromext
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInfo
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.net.Uri
 import android.os.Bundle
+import android.os.Parcelable
 import android.view.Gravity
 import android.view.View
 import android.widget.Button
@@ -28,6 +30,8 @@ class ScriptManagerActivity : Activity() {
   private val text = Color.rgb(17, 24, 39)
   private val muted = Color.rgb(102, 112, 133)
   private val line = Color.rgb(222, 226, 233)
+
+  private data class BrowserTarget(val packageName: String, val label: String)
 
   private fun tint(checked: Int, unchecked: Int): ColorStateList =
       ColorStateList(
@@ -105,6 +109,7 @@ class ScriptManagerActivity : Activity() {
 
     content.addView(languageCard(), spacedParams())
     content.addView(runtimeCard(), spacedParams())
+    content.addView(localServerCard(), spacedParams())
     content.addView(managerCard(), spacedParams())
 
     root.addView(content)
@@ -203,28 +208,98 @@ class ScriptManagerActivity : Activity() {
     return card
   }
 
+  private fun localServerCard(): View {
+    val card = card()
+    val row =
+        LinearLayout(this).apply {
+          orientation = LinearLayout.HORIZONTAL
+          gravity = Gravity.CENTER_VERTICAL
+        }
+    val labels =
+        LinearLayout(this).apply {
+          orientation = LinearLayout.VERTICAL
+          layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+    labels.addView(title(tr("本地 HTTP 服务", "Local HTTP Server")))
+    labels.addView(
+        body(
+            tr(
+                "脚本管理界面作为本地 Server 服务。\n目标为 Chrome 浏览器时推荐开启（小米浏览器无需开启）。",
+                "Serve the script manager page from a local server.\nRecommended for Chrome; not needed for Mi Browser.")))
+    row.addView(labels)
+    row.addView(
+        Switch(this).apply {
+          isChecked = pref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
+          thumbTintList = tint(blue, Color.WHITE)
+          trackTintList = tint(Color.rgb(191, 219, 254), line)
+          setOnCheckedChangeListener { _: CompoundButton, checked: Boolean ->
+            pref.edit().putBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, checked).commit()
+            if (!checked) LocalServer.stop()
+            broadcastSettings(localServerEnabled = checked)
+            render()
+          }
+        })
+    card.addView(row)
+    return card
+  }
+
   private fun spacedParams(): LinearLayout.LayoutParams =
       LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply {
         topMargin = dp(14)
       }
 
   private fun openScriptManager() {
-    val targetPackage =
-        (miBrowserPackages + chromiumPackages).firstOrNull {
-          runCatching { packageManager.getPackageInfo(it, 0) }.isSuccess
-        }
-
-    if (targetPackage == null) {
-      Log.toast(this, tr("没有安装支持的浏览器", "No supported browser installed"))
-      return
+    val targets = installedSupportedBrowsers()
+    when (targets.size) {
+      0 -> Log.toast(this, tr("没有找到支持的浏览器", "No supported browser found"))
+      1 -> startScriptManagerIntent(scriptManagerIntent(targets.first().packageName))
+      else -> openScriptManagerChooser(targets)
     }
+  }
 
-    val managerUrl = "https://chromext.local/?from=module&ts=${System.currentTimeMillis()}"
-    val intent =
-        Intent(Intent.ACTION_VIEW, Uri.parse(managerUrl))
-            .setPackage(targetPackage)
-            .addCategory(Intent.CATEGORY_BROWSABLE)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+  @Suppress("DEPRECATION")
+  private fun installedSupportedBrowsers(): List<BrowserTarget> =
+      packageManager
+          .getInstalledPackages(0)
+          .asSequence()
+          .filter { it.packageName in supportedPackages }
+          .filter { it.applicationInfo?.enabled != false }
+          .distinctBy { it.packageName }
+          .map { packageInfo ->
+            BrowserTarget(packageInfo.packageName, browserLabel(packageInfo))
+          }
+          .sortedWith(compareBy<BrowserTarget> { it.label.lowercase(Locale.ROOT) }.thenBy { it.packageName })
+          .toList()
+
+  private fun browserLabel(packageInfo: PackageInfo): String {
+    val applicationInfo = packageInfo.applicationInfo ?: return packageInfo.packageName
+    return runCatching { packageManager.getApplicationLabel(applicationInfo).toString() }
+        .getOrDefault(packageInfo.packageName)
+  }
+
+  private fun openScriptManagerChooser(targets: List<BrowserTarget>) {
+    val intents = targets.map { scriptManagerIntent(it.packageName) }
+    val chooser =
+        Intent.createChooser(intents.first(), tr("选择浏览器", "Choose Browser"))
+            .putExtra(Intent.EXTRA_INITIAL_INTENTS, intents.drop(1).toTypedArray<Parcelable>())
+    startScriptManagerIntent(chooser)
+  }
+
+  private fun scriptManagerIntent(packageName: String): Intent {
+    val host =
+        if (pref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)) {
+          "chrome.local"
+        } else {
+          "chromext.local"
+        }
+    val managerUrl = "https://${host}/?from=module&ts=${System.currentTimeMillis()}"
+    return Intent(Intent.ACTION_VIEW, Uri.parse(managerUrl))
+        .setPackage(packageName)
+        .addCategory(Intent.CATEGORY_BROWSABLE)
+        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+  }
+
+  private fun startScriptManagerIntent(intent: Intent) {
     runCatching { startActivity(intent) }
         .onFailure { Log.toast(this, tr("无法打开脚本管理", "Unable to open script manager")) }
   }
@@ -232,10 +307,12 @@ class ScriptManagerActivity : Activity() {
   private fun broadcastSettings(
       runtimeLauncherEnabled: Boolean? = null,
       language: String? = null,
+      localServerEnabled: Boolean? = null,
   ) {
     fun applyExtras(intent: Intent): Intent {
       runtimeLauncherEnabled?.let { intent.putExtra("runtime_launcher_enabled", it) }
       language?.let { intent.putExtra("language", it) }
+      localServerEnabled?.let { intent.putExtra(LocalServer.PREF_LOCAL_SERVER_ENABLED, it) }
       return intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
     }
     supportedPackages

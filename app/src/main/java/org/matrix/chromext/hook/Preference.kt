@@ -12,6 +12,7 @@ import android.view.WindowInsets
 import java.lang.reflect.Modifier
 import kotlin.math.roundToInt
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.LocalServer
 import org.matrix.chromext.R
 import org.matrix.chromext.Resource
 import org.matrix.chromext.proxy.PreferenceProxy
@@ -40,7 +41,15 @@ object PreferenceHook : BaseHook() {
             if (it.thisObject::class.java == proxy.developerSettings) {
               val refThis = it
               val preferences = mutableMapOf<String, Any>()
-              arrayOf("eruda", "gesture_mod", "keep_storage", "bookmark", "reset", "exit").forEach {
+              arrayOf(
+                      "eruda",
+                      "gesture_mod",
+                      "keep_storage",
+                      LocalServer.PREF_LOCAL_SERVER_ENABLED,
+                      "bookmark",
+                      "reset",
+                      "exit")
+                  .forEach {
                 preferences[it] = proxy.findPreference.invoke(refThis.thisObject, it)!!
               }
               proxy.setClickListener(preferences.toMap())

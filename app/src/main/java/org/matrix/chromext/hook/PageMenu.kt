@@ -51,7 +51,7 @@ enum class AppMenuItemType(val value: Int) {
    * The number of menu item types specified above. If you add a menu item type you MUST increment
    * this.
    */
-  NUM_ENTRIES(6)
+  NUM_ENTRIES(6),
 }
 
 enum class EntryPoint(val value: Int) {
@@ -274,10 +274,13 @@ object PageMenuHook : BaseHook() {
             toShow.addAll(listOf(3, 4))
           }
 
-          if (!Chrome.isVivaldi &&
-              ctx.resources.configuration.smallestScreenWidthDp >= DisplayMetrics.DENSITY_XXHIGH &&
-              toShow.size == 1 &&
-              toShow.first() == 1) {
+          if (
+              !Chrome.isVivaldi &&
+                  ctx.resources.configuration.smallestScreenWidthDp >=
+                      DisplayMetrics.DENSITY_XXHIGH &&
+                  toShow.size == 1 &&
+                  toShow.first() == 1
+          ) {
             iconRowMenu.setVisible(true)
           }
 
@@ -327,7 +330,8 @@ object PageMenuHook : BaseHook() {
             Int::class.java,
             Boolean::class.java,
             Void.TYPE,
-            View::class.java)
+            View::class.java,
+        )
     val buildNewIncognitoTabItem =
         findMethod(tabbedAppMenuPropertiesDelegate) {
           parameterTypes.size == 0 &&
@@ -391,37 +395,52 @@ object PageMenuHook : BaseHook() {
                       it.thisObject,
                       R.id.developer_tools_id,
                       R.string.main_menu_developer_tools,
-                      R.drawable.ic_devtools),
+                      R.drawable.ic_devtools,
+                  ),
                   buildModelForStandardMenuItem.invoke(
                       it.thisObject,
                       R.id.extension_id,
                       R.string.main_menu_extension,
-                      R.drawable.ic_extension),
+                      R.drawable.ic_extension,
+                  ),
                   buildModelForStandardMenuItem.invoke(
                       it.thisObject,
                       R.id.install_script_id,
                       R.string.main_menu_install_script,
-                      R.drawable.ic_install_script),
+                      R.drawable.ic_install_script,
+                  ),
                   buildModelForStandardMenuItem.invoke(
                       it.thisObject,
                       R.id.eruda_console_id,
                       R.string.main_menu_script_panel,
-                      R.drawable.ic_devtools))
+                      R.drawable.ic_devtools,
+                  ),
+              )
 
           val menusToAdd = mutableListOf<Any>()
 
-          val itemConstuctor = MVCListAdapter_ListItem.declaredConstructors[0]
+          fun newListItem(model: Any): Any {
+            val itemType = AppMenuItemType.STANDARD.value
+            val constructor =
+                MVCListAdapter_ListItem.declaredConstructors.first {
+                  it.parameterCount == 2 &&
+                      it.parameterTypes.any { type -> type == Integer.TYPE } &&
+                      it.parameterTypes.any { type -> type.isAssignableFrom(model::class.java) }
+                }
+            val args =
+                constructor.parameterTypes.map { type ->
+                  if (type == Integer.TYPE) itemType else model
+                }
+            return constructor.newInstance(*args.toTypedArray())
+          }
+
           if (isChromeXtFrontEnd(url)) {
-            menusToAdd.add(
-                itemConstuctor.newInstance(AppMenuItemType.STANDARD.value, localMenus[0]))
-            menusToAdd.add(
-                itemConstuctor.newInstance(AppMenuItemType.STANDARD.value, localMenus[1]))
+            menusToAdd.add(newListItem(localMenus[0]))
+            menusToAdd.add(newListItem(localMenus[1]))
           } else if (isUserScript(url)) {
-            menusToAdd.add(
-                itemConstuctor.newInstance(AppMenuItemType.STANDARD.value, localMenus[2]))
+            menusToAdd.add(newListItem(localMenus[2]))
           } else {
-            menusToAdd.add(
-                itemConstuctor.newInstance(AppMenuItemType.STANDARD.value, localMenus[3]))
+            menusToAdd.add(newListItem(localMenus[3]))
           }
 
           val injectPosition =

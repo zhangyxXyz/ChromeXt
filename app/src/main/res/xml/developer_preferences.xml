@@ -23,6 +23,11 @@ found in the LICENSE file.
 		android:title="Persistent UserScript storages"
 		android:summaryOn="Keep storage data after update / re-installation"
 		android:summaryOff="Wipe storage data after update / re-installation" />
+	<org.chromium.components.browser_ui.settings.ChromeSwitchPreference
+		android:key="local_server_enabled"
+		android:title="Local script manager server"
+		android:summaryOn="Serve the script manager page from a local server. Recommended for Chrome; not needed for Mi Browser."
+		android:summaryOff="Serve the script manager page from a local server. Recommended for Chrome; not needed for Mi Browser." />
 	<Preference
 		android:key="bookmark"
 		android:title="Export bookmarks"
