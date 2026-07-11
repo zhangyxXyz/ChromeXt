@@ -2,9 +2,12 @@ package org.matrix.chromext.extension
 
 import java.io.File
 import java.io.FileReader
+import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URLConnection
+import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
@@ -14,6 +17,8 @@ object LocalFiles {
 
   private val directory: File
   private val extensions = mutableMapOf<String, JSONObject>()
+  private val acceptors = Executors.newCachedThreadPool()
+  private val workers = Executors.newFixedThreadPool(8)
   val script: String
 
   init {
@@ -32,6 +37,7 @@ object LocalFiles {
   }
 
   private fun serveFiles(id: String, connection: Socket) {
+    connection.soTimeout = 5_000
     val path = directory.toString() + "/" + id
     val background = extensions.get(id)?.optJSONObject("background")?.optString("page")
     runCatching {
@@ -66,7 +72,7 @@ object LocalFiles {
                         "HTTP/1.1 200",
                         "Content-Length: ${data.size}",
                         "Content-Type: ${type}",
-                        "Access-Control-Allow-Origin: *")
+                        "Connection: close")
                 connection.outputStream.write(
                     (response.joinToString("\r\n") + "\r\n\r\n").toByteArray())
                 connection.outputStream.write(data)
@@ -76,19 +82,20 @@ object LocalFiles {
           }
         }
         .onFailure { Log.ex(it) }
+    runCatching { connection.close() }
   }
 
   private fun startServer(id: String) {
     if (extensions.containsKey(id) && !extensions.get(id)!!.has("port")) {
       val server = ServerSocket()
-      server.bind(null)
+      server.bind(InetSocketAddress(InetAddress.getLoopbackAddress(), 0))
       val port = server.getLocalPort()
       Log.d("Listening at port ${port} for ${id}")
-      Chrome.IO.submit {
+      acceptors.submit {
         runCatching {
               while (true) {
                 val socket = server.accept()
-                Chrome.IO.submit { serveFiles(id, socket) }
+                workers.submit { serveFiles(id, socket) }
               }
             }
             .onFailure {

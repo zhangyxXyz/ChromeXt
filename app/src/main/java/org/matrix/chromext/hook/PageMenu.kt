@@ -9,7 +9,6 @@ import android.view.MenuItem
 import android.view.View
 import android.widget.ImageButton
 import android.widget.LinearLayout
-import de.robv.android.xposed.XC_MethodHook.Unhook
 import java.lang.reflect.Modifier
 import java.util.ArrayList
 import java.util.LinkedHashSet
@@ -122,7 +121,7 @@ object PageMenuHook : BaseHook() {
         "org.matrix.chromext:id/eruda_console_id" ->
             UserScriptProxy.evaluateJavascript(Local.openRuntimePanel)
         "${ctx.packageName}:id/reload_menu_id" -> {
-          val isLoading = proxy.mIsLoading.get(Chrome.getTab()) as Boolean
+          val isLoading = (proxy.mIsLoading?.get(Chrome.getTab()) as? Boolean) ?: false
           if (!isLoading) return Listener.on("userAgentSpoof", getUrl()) != null
         }
       }
@@ -173,7 +172,7 @@ object PageMenuHook : BaseHook() {
             // public AppMenuPropertiesDelegate createAppMenuPropertiesDelegate()
             .hookAfter {
               findMenuHook!!.unhook()
-              val tabbedAppMenuPropertiesDelegate = it.result::class.java
+              val tabbedAppMenuPropertiesDelegate = it.result!!::class.java
               inflateAppMenu(tabbedAppMenuPropertiesDelegate)
             }
 
@@ -299,7 +298,7 @@ object PageMenuHook : BaseHook() {
             newMenuItem.setVisible(true)
             items.add(position + 1, newMenuItem)
           }
-          for (i in 0..3) items.removeLast()
+          repeat(4) { items.removeAt(items.lastIndex) }
         }
 
     // Inflate for MVC UI model
@@ -435,12 +434,12 @@ object PageMenuHook : BaseHook() {
           }
 
           if (isChromeXtFrontEnd(url)) {
-            menusToAdd.add(newListItem(localMenus[0]))
-            menusToAdd.add(newListItem(localMenus[1]))
+            menusToAdd.add(newListItem(localMenus[0]!!))
+            menusToAdd.add(newListItem(localMenus[1]!!))
           } else if (isUserScript(url)) {
-            menusToAdd.add(newListItem(localMenus[2]))
+            menusToAdd.add(newListItem(localMenus[2]!!))
           } else {
-            menusToAdd.add(newListItem(localMenus[3]))
+            menusToAdd.add(newListItem(localMenus[3]!!))
           }
 
           val injectPosition =

@@ -17,7 +17,7 @@ import org.matrix.chromext.utils.Log
 object LocalServer {
   const val PREF_LOCAL_SERVER_ENABLED = "local_server_enabled"
 
-  private val executor = Executors.newCachedThreadPool()
+  private val executor = Executors.newFixedThreadPool(8)
   private var socket: ServerSocket? = null
   private var port: Int = 0
 
@@ -39,6 +39,7 @@ object LocalServer {
               val client = server.accept()
               executor.execute {
                 client.use {
+                  it.soTimeout = 5_000
                   runCatching {
                         handle(
                             ctx.applicationContext ?: ctx,
@@ -70,7 +71,7 @@ object LocalServer {
   fun rewrite(url: String?): String? {
     if (!isLocalDomainUrl(url)) return null
     val ctx = Chrome.getContext()
-    if (!ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).getBoolean(PREF_LOCAL_SERVER_ENABLED, false)) {
+    if (!Chrome.settings.getBoolean(PREF_LOCAL_SERVER_ENABLED, false)) {
       return null
     }
     val localPort = ensureStarted(ctx)
@@ -82,7 +83,7 @@ object LocalServer {
   }
 
   fun managerUrl(ctx: Context = Chrome.getContext(), source: String): String {
-    if (!ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).getBoolean(PREF_LOCAL_SERVER_ENABLED, false)) {
+    if (!Chrome.settings.getBoolean(PREF_LOCAL_SERVER_ENABLED, false)) {
       return "https://chromext.local/?from=${source}"
     }
     return "http://127.0.0.1:${ensureStarted(ctx)}/?from=${source}"
@@ -114,10 +115,25 @@ object LocalServer {
   private fun handle(ctx: Context, reader: BufferedReader, output: OutputStream) {
     val startedAt = System.currentTimeMillis()
     val requestLine = reader.readLine() ?: return
+    if (requestLine.length > 4_096) {
+      respond(output, 414, "text/plain", "URI Too Long".toByteArray())
+      return
+    }
     val parts = requestLine.split(" ")
     if (parts.size < 2) return
     val method = parts[0]
-    while (reader.readLine()?.isNotEmpty() == true) {}
+    var headerBytes = 0
+    var headerCount = 0
+    while (true) {
+      val header = reader.readLine() ?: return
+      if (header.isEmpty()) break
+      headerBytes += header.length
+      headerCount += 1
+      if (headerBytes > 8_192 || headerCount > 64) {
+        respond(output, 431, "text/plain", "Request Header Fields Too Large".toByteArray())
+        return
+      }
+    }
     if (method != "GET" && method != "HEAD") {
       respond(output, 405, "text/plain", "Method Not Allowed".toByteArray())
       return
@@ -158,8 +174,7 @@ object LocalServer {
   }
 
   private fun localFrontEndHtml(ctx: Context): String {
-    val pref = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
-    val language = JSONObject.quote(pref.getString("language", "system") ?: "system")
+    val language = JSONObject.quote(Chrome.settings.getString("language", "system") ?: "system")
     val i18n =
         JSONObject(
             mapOf(

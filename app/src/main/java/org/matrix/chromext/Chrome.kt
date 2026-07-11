@@ -3,10 +3,8 @@ package org.matrix.chromext
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
-import android.content.BroadcastReceiver
 import android.content.Context
-import android.content.Intent
-import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.net.Uri
 import android.net.http.HttpResponseCache
 import android.os.Build
@@ -17,7 +15,6 @@ import java.lang.ref.WeakReference
 import java.net.CookieManager
 import java.net.HttpCookie
 import java.util.concurrent.Executors
-import de.robv.android.xposed.XSharedPreferences
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.devtools.DevSessions
@@ -29,20 +26,34 @@ import org.matrix.chromext.proxy.UserScriptProxy
 import org.matrix.chromext.script.Local
 import org.matrix.chromext.script.ScriptDbManager
 import org.matrix.chromext.utils.Log
+import org.matrix.chromext.utils.ModernXposed
 import org.matrix.chromext.utils.XMLHttpRequest
 import org.matrix.chromext.utils.findField
 import org.matrix.chromext.utils.findMethod
 import org.matrix.chromext.utils.hookAfter
 import org.matrix.chromext.utils.invokeMethod
 
-const val ACTION_CHROMEXT_SETTINGS_CHANGED = "org.matrix.chromext.action.SETTINGS_CHANGED"
-
 object Chrome {
   private var mContext: WeakReference<Context>? = null
   private var mTab: WeakReference<Any>? = null
   private var devToolsReady = false
-  private var settingsReceiverRegistered = false
-  private var settingsSyncedFromModule = false
+  private var settingsListenerRegistered = false
+  private val settingsListener =
+      SharedPreferences.OnSharedPreferenceChangeListener { preferences, key ->
+        if (key == LocalServer.PREF_LOCAL_SERVER_ENABLED &&
+            !preferences.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)) {
+          LocalServer.stop()
+        }
+        if (key == LocalServer.PREF_LOCAL_SERVER_ENABLED) {
+          runCatching { syncRuntimeLauncherSettings() }
+        }
+        if (key == null || key == "runtime_launcher_enabled" || key == "language") {
+          runCatching { syncRuntimeLauncherSettings() }
+        }
+      }
+
+  val settings: SharedPreferences
+    get() = ModernXposed.settings
 
   var isBrave = false
   var isDev = false
@@ -56,14 +67,13 @@ object Chrome {
   var version: String? = null
   var packageName: String? = null
 
-  val IO = Executors.newCachedThreadPool()
+  val IO = Executors.newFixedThreadPool(8)
   val cookieStore = CookieManager().getCookieStore()
 
   fun init(ctx: Context, packageName: String? = null) {
     val initialized = mContext != null
     mContext = WeakReference(ctx)
-    syncSettingsFromModule(ctx, force = !initialized)
-    registerSettingsReceiver(ctx)
+    registerSettingsListener()
 
     if (initialized || packageName == null) return
     this.packageName = packageName
@@ -84,29 +94,27 @@ object Chrome {
 
     setupHttpCache(ctx)
     saveRedirectCookie()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-      val groupId = "org.matrix.chromext"
-      val group = NotificationChannelGroup(groupId, "ChromeXt")
-      val notificationManager =
-          ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-      notificationManager.createNotificationChannelGroup(group)
-      val id = "xposed_notification"
-      val name = "UserScript Notifications"
-      val desc = "Notifications created by the GM_notification API"
-      val default_channel =
-          NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
-            description = desc
-            setGroup(groupId)
-          }
-      val silent_channel =
-          NotificationChannel(id + "_slient", "Silent " + name, NotificationManager.IMPORTANCE_LOW)
-              .apply {
-                description = desc
-                setGroup(groupId)
-              }
-      notificationManager.createNotificationChannel(default_channel)
-      notificationManager.createNotificationChannel(silent_channel)
-    }
+    val groupId = "org.matrix.chromext"
+    val group = NotificationChannelGroup(groupId, "ChromeXt")
+    val notificationManager =
+        ctx.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    notificationManager.createNotificationChannelGroup(group)
+    val id = "xposed_notification"
+    val name = "UserScript Notifications"
+    val desc = "Notifications created by the GM_notification API"
+    val defaultChannel =
+        NotificationChannel(id, name, NotificationManager.IMPORTANCE_HIGH).apply {
+          description = desc
+          setGroup(groupId)
+        }
+    val silentChannel =
+        NotificationChannel(id + "_slient", "Silent " + name, NotificationManager.IMPORTANCE_LOW)
+            .apply {
+              description = desc
+              setGroup(groupId)
+            }
+    notificationManager.createNotificationChannel(defaultChannel)
+    notificationManager.createNotificationChannel(silentChannel)
   }
 
   private fun setupHttpCache(context: Context) {
@@ -115,100 +123,23 @@ object Chrome {
     HttpResponseCache.install(httpCacheDir, httpCacheSize)
   }
 
-  private fun registerSettingsReceiver(ctx: Context) {
-    if (settingsReceiverRegistered) return
-    val appContext = ctx.applicationContext ?: ctx
-    val receiver =
-        object : BroadcastReceiver() {
-          override fun onReceive(context: Context, intent: Intent) {
-            if (intent.action != ACTION_CHROMEXT_SETTINGS_CHANGED) return
-            val pref = context.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
-            val editor = pref.edit()
-            if (intent.hasExtra("runtime_launcher_enabled")) {
-              editor.putBoolean(
-                  "runtime_launcher_enabled",
-                  intent.getBooleanExtra("runtime_launcher_enabled", true))
-            }
-            if (intent.hasExtra("language")) {
-              editor.putString("language", intent.getStringExtra("language") ?: "system")
-            }
-            if (intent.hasExtra(LocalServer.PREF_LOCAL_SERVER_ENABLED)) {
-              val localServerEnabled =
-                  intent.getBooleanExtra(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
-              editor.putBoolean(
-                  LocalServer.PREF_LOCAL_SERVER_ENABLED,
-                  localServerEnabled)
-              if (!localServerEnabled) LocalServer.stop()
-            }
-            editor.apply()
-            syncRuntimeLauncherSettings(context)
-          }
-        }
-    val filter = IntentFilter(ACTION_CHROMEXT_SETTINGS_CHANGED)
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-      appContext.registerReceiver(receiver, filter, Context.RECEIVER_EXPORTED)
-    } else {
-      @Suppress("UnspecifiedRegisterReceiverFlag") appContext.registerReceiver(receiver, filter)
-    }
-    settingsReceiverRegistered = true
-  }
-
-  fun syncSettingsFromModule(ctx: Context = getContext(), force: Boolean = false) {
-    if (settingsSyncedFromModule && !force) return
-    runCatching {
-          val providerSettings =
-              runCatching {
-                    ctx.contentResolver.call(
-                        Uri.parse("content://org.matrix.chromext.settings"), "settings", null, null)
-                  }
-                  .onFailure { Log.d("Failed to read settings provider: ${it.message}") }
-                  .getOrNull()
-          val modulePref = XSharedPreferences(BuildConfig.APPLICATION_ID, "ChromeXt")
-          modulePref.reload()
-          val editor = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE).edit()
-          if (providerSettings?.containsKey("runtime_launcher_enabled") == true) {
-            editor.putBoolean(
-                "runtime_launcher_enabled",
-                providerSettings.getBoolean("runtime_launcher_enabled", true))
-          } else if (modulePref.contains("runtime_launcher_enabled")) {
-            editor.putBoolean(
-                "runtime_launcher_enabled",
-                modulePref.getBoolean("runtime_launcher_enabled", true))
-          }
-          if (providerSettings?.containsKey("language") == true) {
-            editor.putString("language", providerSettings.getString("language", "system"))
-          } else if (modulePref.contains("language")) {
-            editor.putString("language", modulePref.getString("language", "system"))
-          }
-          if (providerSettings?.containsKey(LocalServer.PREF_LOCAL_SERVER_ENABLED) == true) {
-            val localServerEnabled =
-                providerSettings.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
-            editor.putBoolean(
-                LocalServer.PREF_LOCAL_SERVER_ENABLED,
-                localServerEnabled)
-            if (!localServerEnabled) LocalServer.stop()
-          } else if (modulePref.contains(LocalServer.PREF_LOCAL_SERVER_ENABLED)) {
-            val localServerEnabled =
-                modulePref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
-            editor.putBoolean(
-                LocalServer.PREF_LOCAL_SERVER_ENABLED,
-                localServerEnabled)
-            if (!localServerEnabled) LocalServer.stop()
-          }
-          editor.apply()
-          settingsSyncedFromModule = true
-        }
-        .onFailure { Log.d("Failed to sync module settings: ${it.message}") }
+  private fun registerSettingsListener() {
+    if (settingsListenerRegistered) return
+    settings.registerOnSharedPreferenceChangeListener(settingsListener)
+    settingsListenerRegistered = true
   }
 
   private fun runtimeLauncherDetail(ctx: Context): JSONObject {
-    val pref = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+    val local = ctx.getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
     return JSONObject(
         mapOf(
-            "side" to pref.getString("runtime_launcher_side", "left"),
-            "top" to pref.getFloat("runtime_launcher_top", 58f).toDouble(),
-            "enabled" to pref.getBoolean("runtime_launcher_enabled", true),
-            "language" to pref.getString("language", "system")))
+            "side" to local.getString("runtime_launcher_side", "left"),
+            "top" to local.getFloat("runtime_launcher_top", 58f).toDouble(),
+            "enabled" to settings.getBoolean("runtime_launcher_enabled", true),
+            "language" to settings.getString("language", "system"),
+            "managerUrl" to LocalServer.managerUrl(ctx, "runtime"),
+        )
+    )
   }
 
   fun syncRuntimeLauncherSettings(ctx: Context = getContext()) {
@@ -372,12 +303,39 @@ object Chrome {
 
   private fun evaluateJavascriptDevTools(codes: List<String>, tabId: String, bypassCSP: Boolean) {
     wakeUpDevTools()
-    var client = DevSessions.new(tabId, "page")
-    codes.forEach { client.evaluateJavascript(it) }
-    // Bypass CSP is only effective after reloading
+    val client = DevSessions.new(tabId, "page")
+    // Page.setBypassCSP must be sent before Runtime.evaluate; otherwise userscript fetch/Worker
+    // calls can be rejected by the document CSP before the bypass becomes active.
     client.bypassCSP(bypassCSP)
+    codes.forEach { client.evaluateJavascript(it) }
 
     if (!bypassCSP) client.close()
+  }
+
+
+  fun disableCspBypass(tab: Any?, url: String) {
+    if (!DevSessions.any { it.tag == "page" }) return
+    IO.submit {
+      runCatching {
+            val tabId = getTabId(tab, url)
+            val client = DevSessions.get { it.tabId == tabId && it.tag == "page" } ?: return@submit
+            client.bypassCSP(false)
+            client.close()
+            DevSessions.remove(client)
+          }
+          .onFailure { Log.d("Unable to clear CSP bypass for ${url}: ${it.message}") }
+    }
+  }
+
+  fun enableCspBypass(tab: Any?, url: String) {
+    IO.submit {
+      runCatching {
+            val tabId = getTabId(tab, url)
+            wakeUpDevTools()
+            DevSessions.new(tabId, "page").bypassCSP(true)
+          }
+          .onFailure { Log.d("CSP bypass unavailable for ${url}: ${it.message}") }
+    }
   }
 
   fun evaluateJavascript(
@@ -391,17 +349,34 @@ object Chrome {
     if (frameId != null || forceDevTools) {
       val url = getUrl(tab)
       IO.submit {
-        val tabId = getTabId(tab, url)
-        if (frameId != null) {
-          var client = DevSessions.new(tabId, "page")
-          val params = JSONObject().put("frameId", frameId)
-          codes.forEach {
-            client.command(
-                null, "Page.navigate", params.put("url", "javascript: ${Uri.encode(it)}"))
-          }
-        } else {
-          evaluateJavascriptDevTools(codes, tabId, bypassCSP)
-        }
+        runCatching {
+              val tabId = getTabId(tab, url)
+              if (frameId != null) {
+                val client = DevSessions.new(tabId, "page")
+                val params = JSONObject().put("frameId", frameId)
+                codes.forEach {
+                  client.command(
+                      null,
+                      "Page.navigate",
+                      params.put("url", "javascript: ${Uri.encode(it)}"),
+                  )
+                }
+              } else {
+                evaluateJavascriptDevTools(codes, tabId, bypassCSP)
+              }
+            }
+            .onFailure { error ->
+              Log.ex(error, "DevTools injection failed; falling back to browser injection")
+              if (frameId == null) {
+                Handler(getContext().mainLooper).post {
+                  if (WebViewHook.isInit) {
+                    codes.forEach { WebViewHook.evaluateJavascript(it, tab) }
+                  } else if (UserScriptHook.isInit) {
+                    codes.forEach { UserScriptProxy.evaluateJavascript(it, tab) }
+                  }
+                }
+              }
+            }
       }
     } else {
       Handler(getContext().mainLooper).post {
@@ -419,7 +394,7 @@ object Chrome {
       event: String,
       data: JSONObject,
       excludeSelf: Boolean = true,
-      matching: (String?) -> Boolean
+      matching: (String?) -> Boolean,
   ) {
     val code = "Symbol.${Local.name}.unlock(${Local.key}).post('${event}', ${data});"
     Log.d("broadcasting ${event}")

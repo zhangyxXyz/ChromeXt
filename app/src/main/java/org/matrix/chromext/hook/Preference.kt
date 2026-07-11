@@ -32,20 +32,19 @@ object PreferenceHook : BaseHook() {
         // public void addPreferencesFromResource(Int preferencesResId)
         .hookMethod {
           before {
-            if (it.thisObject::class.java == proxy.developerSettings) {
+            if (it.thisObject!!::class.java == proxy.developerSettings) {
               it.args[0] = R.xml.developer_preferences
             }
           }
 
           after {
-            if (it.thisObject::class.java == proxy.developerSettings) {
+            if (it.thisObject!!::class.java == proxy.developerSettings) {
               val refThis = it
               val preferences = mutableMapOf<String, Any>()
               arrayOf(
                       "eruda",
                       "gesture_mod",
                       "keep_storage",
-                      LocalServer.PREF_LOCAL_SERVER_ENABLED,
                       "bookmark",
                       "reset",
                       "exit")
@@ -65,7 +64,7 @@ object PreferenceHook : BaseHook() {
           // String fname, @Nullable Bundle args)
         }
         .hookAfter {
-          if (it.result::class.java == proxy.developerSettings) {
+          if (it.result!!::class.java == proxy.developerSettings) {
             Resource.enrich(it.args[0] as Context)
           }
         }

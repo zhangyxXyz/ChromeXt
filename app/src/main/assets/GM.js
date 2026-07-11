@@ -1245,6 +1245,26 @@ GM.bootstrap = () => {
     GM.ChromeXt = ChromeXt;
   }
 
+  // Some sites replace the native Promise with an old polyfill. Userscripts execute in the page
+  // realm, so restore the standard combinator expected by modern scripts without replacing an
+  // implementation that already provides it.
+  if (typeof Promise.allSettled != "function") {
+    Object.defineProperty(Promise, "allSettled", {
+      configurable: true,
+      writable: true,
+      value(iterable) {
+        return Promise.all(
+          Array.from(iterable, (item) =>
+            Promise.resolve(item).then(
+              (value) => ({ status: "fulfilled", value }),
+              (reason) => ({ status: "rejected", reason })
+            )
+          )
+        );
+      },
+    });
+  }
+
   runScript(meta);
 
   function promiseListenerFactory(

@@ -61,21 +61,44 @@ class DevToolClient(tabId: String, tag: String? = null) : LocalSocket() {
     return status
   }
 
-  fun command(id: Int?, method: String, params: JSONObject?) {
+  fun command(id: Int?, method: String, params: JSONObject?): Int {
     if (isClosed()) {
-      return
+      return -1
     }
     val msg = JSONObject(mapOf("method" to method))
     if (params != null) msg.put("params", params)
 
+    val commandId = id ?: this.id
     if (id == null) {
-      msg.put("id", this.id)
       this.id += 1
-    } else {
-      msg.put("id", id)
     }
+    msg.put("id", commandId)
 
     WebSocketFrame(msg.toString()).write(outputStream)
+    return commandId
+  }
+
+  private fun readMessage(): JSONObject? {
+    val type = inputStream.read()
+    if (type == -1) return null
+    if (type != (0x80 or 0x1) && type != (0x80 or 0xA)) {
+      throw Exception("Invalid frame type ${type}")
+    }
+    var len = inputStream.read()
+    if (len == 0x7e) {
+      len = inputStream.read() shl 8
+      len += inputStream.read()
+    } else if (len == 0x7f) {
+      len = 0
+      for (i in 0 until 8) len = len or (inputStream.read() shl (8 * (7 - i)))
+    } else if (len > 0x7d) {
+      throw Exception("Invalid frame length ${len}")
+    }
+    var offset = 0
+    val buffer = ByteArray(len)
+    while (offset != len) offset += inputStream.read(buffer, offset, len - offset)
+    if (type == (0x80 or 0xA)) return null
+    return JSONObject(String(buffer))
   }
 
   fun bypassCSP(bypass: Boolean) {
@@ -99,36 +122,9 @@ class DevToolClient(tabId: String, tag: String? = null) : LocalSocket() {
     if (listening) Log.w("client was being listened on")
     listening = true
     runCatching {
-          while (!isClosed()) {
-            val type = inputStream.read()
-            if (type == -1) {
-              break
-            } else if (type == (0x80 or 0x1) || type == (0x80 or 0xA)) {
-              var len = inputStream.read()
-              if (len == 0x7e) {
-                len = inputStream.read() shl 8
-                len += inputStream.read()
-              } else if (len == 0x7f) {
-                len = 0
-                for (i in 0 until 8) {
-                  len = len or (inputStream.read() shl (8 * (7 - i)))
-                }
-              } else if (len > 0x7d) {
-                throw Exception("Invalid frame length ${len}")
-              }
-              var offset = 0
-              val buffer = ByteArray(len)
-              while (offset != len) offset += inputStream.read(buffer, offset, len - offset)
-              val frame = String(buffer)
-
-              if (type == (0x80 or 0xA)) {
-                callback(JSONObject(mapOf("pong" to frame)))
-              } else {
-                callback(JSONObject(frame))
-              }
-            } else {
-              throw Exception("Invalid frame type ${type}")
-            }
+      while (!isClosed()) {
+            val message = readMessage() ?: continue
+            callback(message)
           }
         }
         .onFailure {
@@ -217,21 +213,31 @@ class WebSocketFrame(msg: String?, opcode: Int = 0x1) {
 }
 
 fun connectDevTools(client: LocalSocket) {
-  val address =
+  val addresses =
       if (UserScriptHook.isInit) {
         if (Chrome.isSamsung) {
-          "Terrace_devtools_remote"
+          listOf("Terrace_devtools_remote")
         } else {
-          "chrome_devtools_remote"
+          listOf("chrome_devtools_remote")
         }
       } else if (Chrome.isMi) {
-        "miui_webview_devtools_remote"
+        // Recent Mi Browser builds expose browser_webview_devtools_remote_<pid>, while older
+        // builds used miui_webview_devtools_remote_<pid>.
+        listOf("browser_webview_devtools_remote", "miui_webview_devtools_remote")
       } else if (WebViewHook.isInit) {
-        "webview_devtools_remote"
+        listOf("webview_devtools_remote")
       } else {
         throw Exception("DevTools started unexpectedly")
       }
 
-  runCatching { client.connect(LocalSocketAddress(address)) }
-      .onFailure { client.connect(LocalSocketAddress(address + "_" + Process.myPid())) }
+  var lastError: Throwable? = null
+  addresses.flatMap { listOf(it + "_" + Process.myPid(), it) }.forEach { address ->
+    try {
+      client.connect(LocalSocketAddress(address))
+      return
+    } catch (error: Throwable) {
+      lastError = error
+    }
+  }
+  throw lastError ?: IllegalStateException("No DevTools endpoint candidates")
 }

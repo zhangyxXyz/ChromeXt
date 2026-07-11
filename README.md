@@ -16,6 +16,9 @@ Highlights:
 - Runtime floating script panel with per-page userscript commands and quick exclude actions.
 - Modern `.user.js` install prompt with reinstall detection and feedback.
 - Script exports are written to `Download/ChromeXt/` as `chromext-userscripts-*.json` and can be imported back from the manager.
+- LSPosed / libxposed API 102 integration with framework-managed scope and remote preferences.
+- Bundled Eruda fallback with improved Sources formatting, syntax highlighting, line numbers, and theme support.
+- Compatibility and stability fixes for restored pages, runtime launcher positioning, dark-mode icons, and local script-manager access.
 
 ## Build
 

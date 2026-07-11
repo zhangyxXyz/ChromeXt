@@ -232,6 +232,12 @@
       box-sizing: border-box;
       background: linear-gradient(currentColor, currentColor) center 5px/10px 2px no-repeat;
     }
+    .avatar.icon-debug::before {
+      content: "⚙";
+      color: currentColor;
+      font: 400 22px/1 system-ui, sans-serif;
+      transform: translateY(-1px);
+    }
     .meta {
       min-width: 0;
       flex: 1;
@@ -371,17 +377,21 @@
         background: #2b3340;
         color: #f1f5f9;
       }
-      .avatar.icon-command, .avatar.icon-manager {
-        background: #253040;
-        color: #d8dee8;
+      .avatar.icon-command, .avatar.icon-manager, .avatar.icon-debug {
+        background: rgba(96, 165, 250, .14);
+        color: #93c5fd;
+      }
+      .avatar.icon-manager::before {
+        filter: none;
+        opacity: 1;
       }
       .avatar.icon-command::before {
-        background: #e5e7eb;
-        box-shadow: 0 7px 0 #e5e7eb, 0 14px 0 #e5e7eb;
+        background: currentColor;
+        box-shadow: 0 7px 0 currentColor, 0 14px 0 currentColor;
       }
       .avatar.icon-command::after {
-        background: #e5e7eb;
-        box-shadow: 9px 7px 0 #e5e7eb, 3px 14px 0 #e5e7eb;
+        background: currentColor;
+        box-shadow: 9px 7px 0 currentColor, 3px 14px 0 currentColor;
       }
       .avatar.icon-ban {
         background: rgba(248, 113, 113, .16);
@@ -738,10 +748,15 @@
         addLongPress(row, () => copyInstallUrl(script));
       });
     }
+    const erudaVisible = globalThis.__ChromeXtErudaVisible === true;
+    addRow("icon:debug", t(erudaVisible ? "hideWebDebugTitle" : "webDebugTitle"), t(erudaVisible ? "hideWebDebugSubtitle" : "webDebugSubtitle"), () => {
+      host.remove();
+      ChromeXt.dispatch(erudaVisible ? "hideEruda" : "loadEruda");
+    }, false, true);
     addRow("icon:manager", t("managerTitle"), t("scriptManagerSubtitle"), () => {
       host.remove();
       location.href = globalThis.__ChromeXtManagerUrl || "https://chromext.local/?from=runtime";
-    }, false, true);
+    });
   }
 
   function renderCommands() {

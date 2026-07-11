@@ -78,7 +78,23 @@ div.eruda-btn.eruda-search {
 }
 .eruda-icon-tool:before {
   content: "⚙";
-  font-size: 30px;
+  display: block;
+  font-size: 28px;
+  line-height: 1;
+  margin: 0;
+  transform: translateY(-1px);
+}
+.eruda-entry-btn {
+  display: grid !important;
+  place-items: center !important;
+  padding: 0 !important;
+}
+.eruda-entry-btn > .eruda-icon-tool {
+  display: grid !important;
+  place-items: center !important;
+  width: 100%;
+  height: 100%;
+  line-height: 1;
 }
 .luna-console-icon-error:before {
   content: "✗";
@@ -177,4 +193,175 @@ h2.eruda-title {
   width: 10%;
   margin: auto;
   text-align: center;
+}
+#eruda-sources .cx-source-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  justify-content: flex-end;
+  padding: 6px 8px;
+  background: var(--darker-background);
+  border-bottom: 1px solid var(--border);
+}
+#eruda-sources .cx-source-toolbar button {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 10px;
+  color: var(--primary);
+  background: var(--background);
+  font: 12px/18px system-ui, sans-serif;
+}
+#eruda-sources .cx-source-code {
+  margin: 0;
+  padding: 8px 0;
+  overflow: visible;
+  color: var(--foreground);
+  background: var(--background);
+  font: 12px/18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  counter-reset: cx-source-line;
+  tab-size: 2;
+}
+#eruda-sources .cx-source-line {
+  display: block;
+  min-width: max-content;
+  padding: 0 12px 0 52px;
+  position: relative;
+  white-space: pre;
+  counter-increment: cx-source-line;
+}
+#eruda-sources .cx-source-line::before {
+  content: counter(cx-source-line);
+  position: absolute;
+  left: 0;
+  width: 42px;
+  padding-right: 8px;
+  text-align: right;
+  color: var(--disabled);
+  border-right: 1px solid var(--border);
+}
+#eruda-sources .cx-source-keyword { color: var(--keyword-color) !important; }
+#eruda-sources .cx-source-comment { color: var(--comment-color) !important; }
+#eruda-sources .cx-source-string { color: var(--string-color) !important; }
+#eruda-sources .cx-source-number { color: var(--number-color) !important; }
+
+#eruda-sources .cx-source-controls {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  left: 0;
+  display: flex;
+  gap: 18px;
+  box-sizing: border-box;
+  width: 100%;
+  padding: 8px 12px;
+  background-color: var(--background, #fff);
+  border-bottom: 1px solid var(--border);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, .14);
+  font-size: 12px;
+}
+#eruda-sources .cx-source-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--foreground);
+  font: inherit;
+}
+#eruda-sources .cx-source-toggle input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+#eruda-sources .cx-source-toggle-track {
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 19px;
+  box-sizing: border-box;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, .32);
+  background-color: #596273 !important;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12);
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+#eruda-sources .cx-source-toggle-track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .3);
+  transition: transform 160ms ease;
+}
+#eruda-sources .cx-source-toggle input:checked + .cx-source-toggle-track {
+  border-color: #75a7ff;
+  background-color: #2878e8 !important;
+}
+#eruda-sources .cx-source-toggle input:checked + .cx-source-toggle-track::after {
+  transform: translateX(15px);
+}
+#eruda-sources .cx-source-toggle input:focus-visible + .cx-source-toggle-track {
+  outline: 2px solid #75a7ff;
+  outline-offset: 2px;
+}
+#eruda-sources .cx-highlight-source {
+  overflow: hidden;
+  min-height: 100%;
+  padding: 0;
+  color: var(--foreground);
+  background: var(--background);
+  font-size: 12px;
+}
+#eruda-sources .cx-source-code-grid {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  padding-top: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+#eruda-sources .cx-source-code-grid.has-line-numbers {
+  display: flex;
+}
+#eruda-sources .cx-highlight-source pre {
+  margin: 0;
+  font: 12px/18px monospace;
+}
+#eruda-sources .cx-source-line-numbers {
+  position: sticky;
+  flex: 0 0 auto;
+  left: 0;
+  z-index: 1;
+  padding: 0 8px;
+  text-align: right;
+  user-select: none;
+  color: var(--disabled);
+  background-color: var(--background, #fff);
+  border-right: 1px solid var(--border);
+  box-shadow: 4px 0 6px rgba(0, 0, 0, .12);
+}
+
+@media (prefers-color-scheme: dark) {
+  #eruda-sources .cx-source-controls,
+  #eruda-sources .cx-source-line-numbers {
+    background-color: var(--background, #282c34);
+  }
+}
+#eruda-sources .cx-source-code {
+  flex: 0 0 max-content;
+  min-width: calc(100% - 48px);
+  padding: 0 12px 8px 8px;
+  white-space: pre;
+}
+#eruda-sources .cx-source-truncated {
+  margin: 8px 12px 0;
+  padding: 6px 8px;
+  color: var(--foreground);
+  background: var(--highlight);
+  border-left: 2px solid var(--primary);
+  font: 11px/16px system-ui, sans-serif;
 }

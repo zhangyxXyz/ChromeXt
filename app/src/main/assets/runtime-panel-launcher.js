@@ -1,14 +1,14 @@
 (() => {
   if (window.top !== window) return;
   const id = "__chromext_runtime_launcher__";
-  if (document.getElementById(id)) return;
+  // Restored Mi Browser windows can retain the old launcher DOM. Replace it so the current
+  // instance requests the globally saved side/top instead of keeping a stale default position.
+  document.getElementById(id)?.remove();
   const width = 38;
   const height = 28;
   const peek = 24;
   let ChromeXt = null;
-  try {
-    ChromeXt = Symbol.ChromeXtRuntimeName.unlock(ChromeXtRuntimeKey, false);
-  } catch {}
+  let ChromeXtConnected = false;
 
   const button = document.createElement("button");
   button.id = id;
@@ -214,7 +214,15 @@
     { passive: true }
   );
 
-  if (ChromeXt) {
+  function connectChromeXt() {
+    if (ChromeXtConnected) return;
+    try {
+      ChromeXt = Symbol.ChromeXtRuntimeName.unlock(ChromeXtRuntimeKey, false);
+    } catch {
+      setTimeout(connectChromeXt, 100);
+      return;
+    }
+    ChromeXtConnected = true;
     ChromeXt.addEventListener("runtimeLauncherPosition", (event) => {
       const data = event.detail || {};
       if (data.enabled === false) {
@@ -223,16 +231,19 @@
         return;
       }
       globalThis.__ChromeXtLanguage = data.language || "system";
+      if (typeof data.managerUrl === "string" && data.managerUrl) {
+        globalThis.__ChromeXtManagerUrl = data.managerUrl;
+      }
       side = data.side === "right" ? "right" : "left";
       topPx = Number.isFinite(data.top) ? data.top : 58;
       if (!button.isConnected) mount();
       if (document.getElementById("__chromext_runtime_panel__")) expand();
       else dock();
     });
+    requestSettings();
   }
 
-  requestSettings();
-  if (!ChromeXt) {
-    mount();
-  }
+  // Activity-launched and restored WebViews may receive this asset just before the protected
+  // ChromeXt symbol is locked. Wait for the bridge instead of mounting at the default position.
+  connectChromeXt();
 })();

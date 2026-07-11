@@ -5,12 +5,17 @@ import android.content.ComponentName
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import org.matrix.chromext.utils.Log
 
 const val TAG = "ChromeXt"
 
-class OpenInChrome : Activity() {
+class OpenInChrome : Activity(), XposedServiceRepository.Listener {
   var defaultPackage = "com.android.chrome"
+  private val handler = Handler(Looper.getMainLooper())
+  private var handled = false
+  private val connectionTimeout = Runnable { handleIntent(force = true) }
 
   fun invokeChromeTabbed(url: String) {
     val activity = "com.google.android.apps.chrome.Main"
@@ -30,15 +35,41 @@ class OpenInChrome : Activity() {
   @Suppress("QueryPermissionsNeeded")
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    XposedServiceRepository.initialize(this)
+    XposedServiceRepository.addListener(this)
+    handler.postDelayed(connectionTimeout, 3_000)
+  }
 
-    @Suppress("DEPRECATION") val installedApplications = packageManager.getInstalledApplications(0)
-    val avaiblePackages = supportedPackages.intersect(installedApplications.map { it.packageName })
-    if (avaiblePackages.size == 0) {
-      Log.toast(this, "No supported Chrome installed")
+  override fun onDestroy() {
+    handler.removeCallbacks(connectionTimeout)
+    XposedServiceRepository.removeListener(this)
+    super.onDestroy()
+  }
+
+  override fun onStateChanged() {
+    handleIntent(force = false)
+  }
+
+  private fun handleIntent(force: Boolean) {
+    if (handled || (!force && !XposedServiceRepository.isServiceAvailable)) return
+    handled = true
+    handler.removeCallbacks(connectionTimeout)
+
+    val availablePackages =
+        XposedServiceRepository.getScope().filter { packageName ->
+          packageName in supportedPackages &&
+              runCatching {
+                    @Suppress("DEPRECATION")
+                    packageManager.getPackageInfo(packageName, 0).applicationInfo?.enabled != false
+                  }
+                  .getOrDefault(false)
+        }
+    if (availablePackages.isEmpty()) {
+      Log.toast(this, "No scoped supported browser found")
       finish()
       return
     } else {
-      defaultPackage = avaiblePackages.last()
+      defaultPackage = availablePackages.first()
     }
 
     val isSamsung = defaultPackage.startsWith("com.sec.android.app.sbrowser")

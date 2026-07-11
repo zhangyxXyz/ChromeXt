@@ -3,7 +3,6 @@ package org.matrix.chromext.utils
 import android.content.Context
 import android.util.Log
 import android.widget.Toast
-import de.robv.android.xposed.XposedBridge
 import java.lang.ref.WeakReference
 import org.matrix.chromext.BuildConfig
 import org.matrix.chromext.TAG
@@ -13,7 +12,9 @@ object Log {
 
   fun i(msg: String) {
     Log.i(TAG, msg)
-    XposedBridge.log("ChromeXt logging: " + msg)
+    if (ModernXposed.isInitialized) {
+      ModernXposed.module.log(android.util.Log.INFO, TAG, msg)
+    }
   }
 
   fun d(msg: String, full: Boolean = false) {
@@ -32,12 +33,16 @@ object Log {
 
   fun e(msg: String) {
     Log.e(TAG, msg)
-    XposedBridge.log("ChromeXt error: " + msg)
+    if (ModernXposed.isInitialized) {
+      ModernXposed.module.log(android.util.Log.ERROR, TAG, msg)
+    }
   }
 
   fun ex(thr: Throwable, msg: String = "") {
     Log.e(TAG, msg, thr)
-    XposedBridge.log("ChromeXt exception caught: [${msg}] " + thr.toString())
+    if (ModernXposed.isInitialized) {
+      ModernXposed.module.log(android.util.Log.ERROR, TAG, msg, thr)
+    }
   }
 
   fun toast(context: Context, msg: String) {

@@ -149,17 +149,27 @@ object ScriptDbManager {
     webSettings?.invokeMethod(true) { name == "setJavaScriptEnabled" }
     val initScript = codes.joinToString("\n")
 
-    val asyncEvaluation = bypassSandbox || frameId != null
+    val matchedScripts =
+        if (runScripts) {
+          scripts.filter {
+            !it.disabled && matching(it, url) && !(frameId != null && it.noframes)
+          }
+        } else {
+          emptyList()
+        }
+    // Userscripts run with extension-like privileges. Enable CSP bypass only for tabs where at
+    // least one enabled userscript matches the current main-frame URL.
+    val bypassCsp = frameId == null && matchedScripts.isNotEmpty()
+    val forceDevTools = bypassSandbox || bypassCsp
+    val asyncEvaluation = forceDevTools || frameId != null
     var framesGranted = false
 
+    if (frameId == null && !bypassCsp) Chrome.disableCspBypass(webView, url)
     if (!asyncEvaluation)
-        Chrome.evaluateJavascript(
-            listOf(initScript), webView, frameId, bypassSandbox, bypassSandbox)
+        Chrome.evaluateJavascript(listOf(initScript), webView, frameId)
     codes.clear()
     if (asyncEvaluation) codes.add(initScript)
     if (runScripts) {
-      val matchedScripts =
-          scripts.filter { !it.disabled && matching(it, url) && !(frameId != null && it.noframes) }
       matchedScripts.forEach {
             if (it.grant.contains("frames")) framesGranted = true
             GM.bootstrap(it, codes)
@@ -168,7 +178,7 @@ object ScriptDbManager {
       if (!asyncEvaluation) Chrome.evaluateJavascript(codes, webView, frameId)
     }
     if (asyncEvaluation)
-        Chrome.evaluateJavascript(codes, webView, frameId, bypassSandbox, bypassSandbox)
+        Chrome.evaluateJavascript(codes, webView, frameId, forceDevTools, bypassCsp)
 
     if (framesGranted && frameId == null) Chrome.injectFrames(webView)
   }

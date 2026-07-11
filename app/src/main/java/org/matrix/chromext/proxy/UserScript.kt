@@ -85,12 +85,12 @@ object UserScriptProxy {
                       indexOfFirst { it.type == webContents },
                       indexOfFirst { it.type == loadUrlParams },
                   )
-              slice(startIndex..size - 1).find {
+              slice(startIndex.coerceAtLeast(0)..size - 1).find {
                 it.type == Boolean::class.java && !Modifier.isStatic(it.modifiers)
-              }!!
+              }
             } else target
           }
-          .also { it.isAccessible = true }
+          ?.also { it.isAccessible = true }
   val getUrl = findMethodOrNull(tabImpl) { returnType == gURL }
   val loadUrl =
       findMethod(if (Chrome.isSamsung) tabWebContentsDelegateAndroidImpl else tabImpl) {

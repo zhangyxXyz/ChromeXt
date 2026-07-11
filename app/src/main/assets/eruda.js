@@ -1,4 +1,34 @@
+(() => {
 const ChromeXt = Symbol.ChromeXt.unlock(ChromeXtUnlockKeyForEruda, false);
+const ChromeXtErudaConfig = {
+  themeMode: "System",
+  lightTheme: "Light",
+  darkTheme: "Dark",
+  sourceFormat: true,
+  sourceHighlight: true,
+  sourceLineNumbers: true,
+};
+const ChromeXtErudaConfigListeners = new Set();
+let ChromeXtErudaConfigLoaded = false;
+const saveChromeXtErudaConfig = (patch) => {
+  Object.assign(ChromeXtErudaConfig, patch);
+  ChromeXt.dispatch("erudaSettings", patch);
+};
+ChromeXt.addEventListener("erudaSettings", (event) => {
+  Object.assign(ChromeXtErudaConfig, event.detail || {});
+  ChromeXtErudaConfigLoaded = true;
+  ChromeXtErudaConfigListeners.forEach((listener) => listener());
+});
+ChromeXt.dispatch("erudaSettings", { read: true });
+
+if (!globalThis.eruda || Number.parseInt(String(globalThis.eruda.version).split(".")[0], 10) !== 3) {
+  console.warn("ChromeXt: unsupported Eruda version, using the official UI without adaptations", globalThis.eruda?.version);
+  if (globalThis.eruda) {
+    if (!eruda._devTools) eruda.init();
+    eruda.show();
+  }
+  return;
+}
 
 eruda._inLocalPage =
   ["content://", "file://"].includes(location.origin) ||
@@ -19,25 +49,15 @@ eruda._initDevTools = new Proxy(eruda._initDevTools, {
     }
   },
   hookToggle(devTools) {
+    if (devTools.__ChromeXtBottomHooked) return;
+    devTools.__ChromeXtBottomHooked = true;
     const _show = devTools.show;
     devTools.show = (...args) => {
-      if (this.eruda_h == 5) return _show.apply(devTools, args);
       const el = devTools._$el[0];
       const resizer = devTools._$el.find(".eruda-resizer")[0];
-      const top = this.fixTop();
-      if (top > -1 && top + this.eruda_h / 2 < window.innerHeight / 2) {
-        el.style.bottom = "";
-        el.style.top = top + "px";
-        resizer.style.height = "";
-      } else {
-        el.style.top = "";
-        resizer.style.height = "10px";
-        if (top > 0 && top < window.innerHeight) {
-          el.style.bottom = window.innerHeight - top - this.eruda_h + "px";
-        } else {
-          el.style.bottom = "";
-        }
-      }
+      el.style.top = "";
+      el.style.bottom = "";
+      resizer.style.height = "10px";
       return _show.apply(devTools, args);
     };
     const _hide = devTools.hide;
@@ -245,9 +265,237 @@ eruda.Elements = class extends eruda.Elements {
   }
 };
 
+function formatSource(code, type) {
+  if (code.length > 300000) return code;
+  if (type === "html") {
+    let depth = 0;
+    return code
+      .replace(/>\s*</g, ">\n<")
+      .split("\n")
+      .map((line) => {
+        const text = line.trim();
+        if (/^<\/(?!html)/.test(text)) depth = Math.max(0, depth - 1);
+        const result = "  ".repeat(depth) + text;
+        if (/^<[^!/][^>]*[^/]>/i.test(text) &&
+            !/^<(area|base|br|col|embed|hr|img|input|link|meta|param|source|track|wbr)\b/i.test(text) &&
+            !/<\/[^>]+>\s*$/.test(text)) depth++;
+        return result;
+      })
+      .join("\n");
+  }
+  let output = "";
+  let indent = 0;
+  let quote = "";
+  let escaped = false;
+  let lineComment = false;
+  let blockComment = false;
+  const newline = () => {
+    output = output.replace(/[ \t]+$/, "");
+    if (!output.endsWith("\n")) output += "\n";
+    output += "  ".repeat(indent);
+  };
+  for (let i = 0; i < code.length; i++) {
+    const ch = code[i];
+    const next = code[i + 1];
+    if (lineComment) {
+      output += ch;
+      if (ch === "\n") {
+        lineComment = false;
+        output += "  ".repeat(indent);
+      }
+      continue;
+    }
+    if (blockComment) {
+      output += ch;
+      if (ch === "*" && next === "/") {
+        output += next;
+        i++;
+        blockComment = false;
+      }
+      continue;
+    }
+    if (quote) {
+      output += ch;
+      if (escaped) escaped = false;
+      else if (ch === "\\") escaped = true;
+      else if (ch === quote) quote = "";
+      continue;
+    }
+    if (ch === "\"" || ch === "'" || ch === "`") {
+      quote = ch;
+      output += ch;
+    } else if (ch === "/" && next === "/") {
+      lineComment = true;
+      output += ch + next;
+      i++;
+    } else if (ch === "/" && next === "*") {
+      blockComment = true;
+      output += ch + next;
+      i++;
+    } else if (ch === "{") {
+      output += " {".replace(/^ /, output.endsWith(" ") ? "" : " ");
+      indent++;
+      newline();
+    } else if (ch === "}") {
+      indent = Math.max(0, indent - 1);
+      newline();
+      output += "}";
+      if (next !== ";" && next !== "," && next !== ")") newline();
+    } else if (ch === ";") {
+      output += ch;
+      newline();
+    } else if (ch === "\n" || ch === "\r" || ch === "\t") {
+      if (!output.endsWith(" ") && !output.endsWith("\n")) output += " ";
+    } else {
+      output += ch;
+    }
+  }
+  return output.trim();
+}
+
+function escapeSource(code) {
+  return code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function highlightSource(code, type) {
+  const color = (name, fallback) => `style="color:var(--${name},${fallback})!important"`;
+  const embedded = [];
+  if (type === "html") {
+    code = code.replace(
+      /(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2\s*>)/gi,
+      (_whole, open, tag, source, close) => {
+        const index = embedded.push(highlightSource(source, tag.toLowerCase() === "script" ? "js" : "css")) - 1;
+        return `${open}\u0001CX_EMBED_${index}\u0001${close}`;
+      }
+    );
+  }
+  let html = escapeSource(code);
+  if (type === "html") {
+    return html
+      .replace(/(&lt;\/?)([\w:-]+)([\s\S]*?)(&gt;)/g,
+        `$1<span ${color("tag-name-color", "#e2777a")}>$2</span><span ${color("string-color", "#7ec699")}>$3</span>$4`)
+      .replace(/\u0001CX_EMBED_(\d+)\u0001/g, (_match, index) => embedded[Number(index)]);
+  }
+  const tokens = [];
+  html = html.replace(/(\/\*[\s\S]*?\*\/|\/\/[^\n]*|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g,
+    (token) => {
+      const kind = token.startsWith("/") ? "comment" : "string";
+      const style = kind === "comment"
+        ? color("comment-color", "#999")
+        : color("string-color", "#7ec699");
+      tokens.push(`<span ${style}>${token}</span>`);
+      return `\u0000${tokens.length - 1}\u0000`;
+    });
+  html = html
+    .replace(/\b(const|let|var|function|class|return|if|else|for|while|switch|case|break|continue|new|async|await|try|catch|throw|import|export|from|extends|this|typeof|instanceof|true|false|null|undefined)\b/g,
+      `<span ${color("keyword-color", "#cc99cd")}>$1</span>`)
+    .replace(/\b(0x[\da-f]+|\d+(?:\.\d+)?)\b/gi, `<span ${color("number-color", "#f08d49")}>$1</span>`)
+    .replace(/\u0000(\d+)\u0000/g, (_match, index) => tokens[Number(index)]);
+  if (type === "css") {
+    html = html.replace(
+      /(^|[;{]\s*)(--?[\w-]+|[a-z][\w-]*)(\s*:)/gim,
+      `$1<span ${color("keyword-color", "#cc99cd")}>$2</span>$3`
+    );
+  }
+  return html;
+}
+
 eruda.Sources = class extends eruda.Sources {
+  constructor(...args) {
+    super(...args);
+    this._cxFormatSource = ChromeXtErudaConfig.sourceFormat;
+    this._cxHighlightSource = ChromeXtErudaConfig.sourceHighlight;
+    this._cxLineNumbers = ChromeXtErudaConfig.sourceLineNumbers;
+    ChromeXtErudaConfigListeners.add(() => {
+      this._cxFormatSource = ChromeXtErudaConfig.sourceFormat;
+      this._cxHighlightSource = ChromeXtErudaConfig.sourceHighlight;
+      this._cxLineNumbers = ChromeXtErudaConfig.sourceLineNumbers;
+    });
+  }
+  _cxSaveSourceOption(key, value) {
+    const configKey = key === "format"
+      ? "sourceFormat"
+      : key === "highlight" ? "sourceHighlight" : "sourceLineNumbers";
+    saveChromeXtErudaConfig({ [configKey]: value });
+  }
+  _cxAddSourceControls() {
+    const host = this._$el?.[0];
+    if (!host || host.querySelector(".cx-source-controls")) return;
+    const controls = document.createElement("div");
+    controls.className = "cx-source-controls";
+    const addToggle = (label, key) => {
+      const control = document.createElement("label");
+      control.className = "cx-source-toggle";
+      const input = document.createElement("input");
+      input.type = "checkbox";
+      const track = document.createElement("span");
+      track.className = "cx-source-toggle-track";
+      const text = document.createElement("span");
+      text.textContent = label;
+      const update = () => {
+        const enabled = key === "format"
+          ? this._cxFormatSource
+          : key === "highlight" ? this._cxHighlightSource : this._cxLineNumbers;
+        input.checked = enabled;
+      };
+      input.addEventListener("change", () => {
+        if (key === "format") this._cxFormatSource = !this._cxFormatSource;
+        else if (key === "highlight") this._cxHighlightSource = !this._cxHighlightSource;
+        else this._cxLineNumbers = !this._cxLineNumbers;
+        const value = key === "format"
+          ? this._cxFormatSource
+          : key === "highlight" ? this._cxHighlightSource : this._cxLineNumbers;
+        update();
+        this._cxSaveSourceOption(key, value);
+        this._renderCode();
+      });
+      update();
+      control.append(text, input, track);
+      controls.appendChild(control);
+    };
+    addToggle("Format", "format");
+    addToggle("Highlight", "highlight");
+    addToggle("Line Numbers", "lineNumbers");
+    host.prepend(controls);
+  }
+  _renderCode() {
+    const data = this._data;
+    const original = data.val;
+    const originalShowLineNumbers = this._showLineNum;
+    this._showLineNum = this._cxLineNumbers;
+    if (this._cxFormatSource && original.length <= 300000) data.val = formatSource(original, data.type);
+    try {
+      if (data.val.length > 30000) {
+        const visibleSource = data.val.slice(0, 100000);
+        const lineNumbers = Array.from(
+          { length: visibleSource.split("\n").length },
+          (_value, index) => index + 1
+        ).join("\n");
+        const truncated = data.val.length > visibleSource.length
+          ? `<div class="cx-source-truncated">Source truncated to 100 KB for safe highlighting.</div>`
+          : "";
+        const gutter = this._cxLineNumbers
+          ? `<pre class="cx-source-line-numbers">${lineNumbers}</pre>`
+          : "";
+        const code = this._cxHighlightSource
+          ? highlightSource(visibleSource, data.type)
+          : escapeSource(visibleSource);
+        const gridClass = this._cxLineNumbers ? "cx-source-code-grid has-line-numbers" : "cx-source-code-grid";
+        this._renderHtml(`<div class="cx-highlight-source" data-type="${data.type}">${truncated}<div class="${gridClass}">${gutter}<pre class="cx-source-code">${code}</pre></div></div>`, false);
+      } else if (!this._cxHighlightSource) {
+        super._renderRaw();
+      } else {
+        super._renderCode();
+      }
+      this._cxAddSourceControls();
+    } finally {
+      data.val = original;
+      this._showLineNum = originalShowLineNumbers;
+    }
+  }
   _renderDef() {
-    if (this._html && this._data) {
+    if (this._html) {
+      this._data = { type: "html", val: this._html };
       return this._render();
     }
     if (eruda._inLocalPage) {
@@ -266,12 +514,12 @@ eruda.Sources = class extends eruda.Sources {
     fetch(location.href, { cache: "force-cache", mode: "same-origin" })
       .then((res) => res.text())
       .then((text) => {
-        this._html = text;
+        this._html = text || document.documentElement.outerHTML;
         setData();
       })
       .catch((e) => {
         console.error(e);
-        this._html = "Sorry, unable to fetch source code:(";
+        this._html = document.documentElement.outerHTML || "Sorry, unable to fetch source code:(";
         setData();
       });
   }
@@ -484,5 +732,107 @@ eruda.Info = class extends eruda.Info {
 };
 
 if (typeof define == "function" && define.amd === false) define.amd = true;
-eruda.init();
-eruda.show();
+if (!eruda._devTools) eruda.init();
+if (eruda._devTools && !eruda._devTools.__ChromeXtBottomHooked) {
+  const devTools = eruda._devTools;
+  devTools.__ChromeXtBottomHooked = true;
+  const originalShow = devTools.show;
+  devTools.show = (...args) => {
+    const el = devTools._$el[0];
+    el.style.top = "";
+    el.style.bottom = "";
+    const resizer = devTools._$el.find(".eruda-resizer")[0];
+    if (resizer) resizer.style.height = "10px";
+    return originalShow.apply(devTools, args);
+  };
+}
+
+function installChromeXtThemeSettings() {
+  const devTools = eruda._devTools;
+  const settings = devTools?.get?.("settings");
+  const root = settings?._$el?.[0];
+  if (!root || typeof devTools._setTheme !== "function" || devTools.__ChromeXtThemeSettings) return;
+  devTools.__ChromeXtThemeSettings = true;
+
+  const lightThemes = ["Light", "Material Lighter", "Atom One Light", "Solarized Light", "Github", "Light Owl"];
+  const darkThemes = ["Dark", "Material Oceanic", "Material Darker", "Material Palenight", "Material Deep Ocean", "Monokai Pro", "Dracula", "Arc Dark", "Atom One Dark", "Solarized Dark", "Night Owl", "AMOLED"];
+  const media = matchMedia("(prefers-color-scheme: dark)");
+  const apply = () => {
+    const selectedMode = ChromeXtErudaConfig.themeMode;
+    const useDark = selectedMode === "Dark" || (selectedMode === "System" && media.matches);
+    devTools._setTheme(useDark ? ChromeXtErudaConfig.darkTheme : ChromeXtErudaConfig.lightTheme);
+  };
+  const config = {
+    get(key) { return ChromeXtErudaConfig[key]; },
+    set(key, value) { saveChromeXtErudaConfig({ [key]: value }); apply(); },
+  };
+  const onSystemThemeChanged = () => { if (ChromeXtErudaConfig.themeMode === "System") apply(); };
+  if (typeof media.addEventListener === "function") media.addEventListener("change", onSystemThemeChanged);
+  else media.addListener?.(onSystemThemeChanged);
+
+  try { settings.remove?.(devTools.config, "theme"); } catch (_error) { /* Older Eruda. */ }
+  const firstOriginalItem = root.firstElementChild;
+  const originalItems = new Set(root.children);
+  settings
+    .select(config, "themeMode", "Theme Mode", ["System", "Light", "Dark"])
+    .select(config, "lightTheme", "Light Theme", lightThemes)
+    .select(config, "darkTheme", "Dark Theme", darkThemes)
+    .separator();
+  // Settings only exposes append APIs. Move just-created native rows to the front.
+  [...root.children]
+    .filter((item) => !originalItems.has(item))
+    .forEach((item) => root.insertBefore(item, firstOriginalItem));
+  ChromeXtErudaConfigListeners.add(apply);
+  apply();
+}
+
+// Avoid depending on a helper that may not exist in future Eruda builds.
+const safelyInstallChromeXtThemeSettings = () => {
+  try {
+    installChromeXtThemeSettings();
+  } catch (error) {
+    console.warn("ChromeXt: unable to install Eruda theme settings", error);
+  }
+};
+if (ChromeXtErudaConfigLoaded) safelyInstallChromeXtThemeSettings();
+else ChromeXtErudaConfigListeners.add(safelyInstallChromeXtThemeSettings);
+globalThis.__ChromeXtErudaAdapted = true;
+globalThis.__ChromeXtErudaVisible = true;
+globalThis.__ChromeXtRefreshErudaStyles = () => {
+  const root = eruda._shadowRoot;
+  if (!root || !Array.isArray(eruda._styles)) return;
+  ["font_fix", "new_icons", "dom_fix", "plugin"].forEach((id, index) => {
+    const style = root.querySelector("style#" + id);
+    if (style && typeof eruda._styles[index] === "string") {
+      style.textContent = eruda._styles[index];
+    }
+  });
+};
+globalThis.__ChromeXtShowEruda = () => {
+  const entry = eruda._entryBtn?._$el?.[0];
+  const icon = entry?.querySelector(".eruda-icon-tool");
+  eruda._entryBtn?.show?.();
+  if (entry) {
+    entry.style.setProperty("display", "grid", "important");
+    entry.style.setProperty("place-items", "center", "important");
+    entry.style.setProperty("padding", "0", "important");
+  }
+  if (icon) {
+    icon.style.setProperty("display", "grid", "important");
+    icon.style.setProperty("place-items", "center", "important");
+    icon.style.width = "100%";
+    icon.style.height = "100%";
+    icon.style.lineHeight = "1";
+  }
+  globalThis.__ChromeXtErudaVisible = true;
+  eruda.show();
+};
+globalThis.__ChromeXtHideEruda = () => {
+  eruda.hide();
+  const entry = eruda._entryBtn?._$el?.[0];
+  eruda._entryBtn?.hide?.();
+  if (entry) entry.style.setProperty("display", "none", "important");
+  globalThis.__ChromeXtErudaVisible = false;
+};
+globalThis.__ChromeXtShowEruda();
+})();

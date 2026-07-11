@@ -49,8 +49,8 @@ object PreferenceProxy {
   private val preferenceFragmentCompat =
       loopOverSuperClass(developerSettings.superclass as Class<*>) {
         (!Chrome.isBrave && !it.name.startsWith("org.chromium.chrome")) ||
-            it.superclass.name.startsWith("androidx.fragment") ||
-            it.superclass.superclass.name == "java.lang.Object"
+            it.superclass?.name?.startsWith("androidx.fragment") == true ||
+            it.superclass?.superclass?.name == "java.lang.Object"
       }
   val findPreference =
       findMethod(preferenceFragmentCompat) {
@@ -86,9 +86,6 @@ object PreferenceProxy {
         Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
             sharedPref.getBoolean("gesture_mod", true))
     setChecked.invoke(preferences["keep_storage"], ScriptDbManager.keepStorage)
-    setChecked.invoke(
-        preferences[LocalServer.PREF_LOCAL_SERVER_ENABLED],
-        sharedPref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false))
 
     var reset_confirming = 1
     val listeners =
@@ -189,16 +186,6 @@ object PreferenceProxy {
                   ScriptDbManager.keepStorage = !enabled
                   with(sharedPref.edit()) {
                     putBoolean("keep_storage", !enabled)
-                    apply()
-                  }
-                },
-            LocalServer.PREF_LOCAL_SERVER_ENABLED to
-                fun(obj: Any) {
-                  val enabled = sharedPref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
-                  setChecked.invoke(obj, !enabled)
-                  if (enabled) LocalServer.stop()
-                  with(sharedPref.edit()) {
-                    putBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, !enabled)
                     apply()
                   }
                 },

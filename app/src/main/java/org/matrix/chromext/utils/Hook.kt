@@ -1,78 +1,108 @@
 package org.matrix.chromext.utils
 
-import de.robv.android.xposed.XC_MethodHook
-import de.robv.android.xposed.XC_MethodHook.Unhook
-import de.robv.android.xposed.XposedBridge
-import de.robv.android.xposed.callbacks.XCallback
+import io.github.libxposed.api.XposedInterface
+import io.github.libxposed.api.XposedInterface.HookHandle
 import java.lang.reflect.Constructor
+import java.lang.reflect.Executable
 import java.lang.reflect.Method
 
-typealias Hooker = (param: XC_MethodHook.MethodHookParam) -> Unit
+typealias Unhook = HookHandle
 
-fun Method.hookMethod(hookCallback: XC_MethodHook): XC_MethodHook.Unhook {
-  return XposedBridge.hookMethod(this, hookCallback)
+typealias Hooker = (param: HookParam) -> Unit
+
+class HookParam internal constructor(private val chain: XposedInterface.Chain) {
+  val thisObject: Any?
+    get() = chain.thisObject
+
+  val args: Array<Any?> = chain.args.toTypedArray()
+
+  private var resultAssigned = false
+  private var throwableAssigned = false
+  private var currentResult: Any? = null
+  private var currentThrowable: Throwable? = null
+  var result: Any?
+    get() = currentResult
+    set(value) {
+      currentResult = value
+      currentThrowable = null
+      resultAssigned = true
+      throwableAssigned = false
+    }
+
+  var throwable: Throwable?
+    get() = currentThrowable
+    set(value) {
+      currentThrowable = value
+      currentResult = null
+      throwableAssigned = true
+      resultAssigned = false
+    }
+
+  val hasThrowable: Boolean
+    get() = currentThrowable != null
+
+  internal fun shouldSkipOriginal(): Boolean = resultAssigned || throwableAssigned
+
+  internal fun setOriginalResult(value: Any?) {
+    currentResult = value
+    currentThrowable = null
+  }
+
+  internal fun setOriginalThrowable(value: Throwable) {
+    currentResult = null
+    currentThrowable = value
+  }
+}
+
+private fun Executable.installHook(
+    priority: Int,
+    before: Hooker? = null,
+    after: Hooker? = null,
+): HookHandle {
+  return ModernXposed.module
+      .hook(this)
+      .setPriority(priority)
+      .setExceptionMode(XposedInterface.ExceptionMode.PASSTHROUGH)
+      .intercept { chain ->
+        val param = HookParam(chain)
+        runCatching { before?.invoke(param) }.onFailure(Log::ex)
+        if (!param.shouldSkipOriginal()) {
+          try {
+            param.setOriginalResult(chain.proceed(param.args))
+          } catch (throwable: Throwable) {
+            param.setOriginalThrowable(throwable)
+          }
+        }
+        runCatching { after?.invoke(param) }.onFailure(Log::ex)
+        param.throwable?.let { throw it }
+        param.result
+      }
 }
 
 fun Method.hookBefore(
-    priority: Int = XCallback.PRIORITY_DEFAULT,
-    hook: Hooker
-): XC_MethodHook.Unhook {
-  return this.hookMethod(
-      object : XC_MethodHook(priority) {
-        override fun beforeHookedMethod(param: MethodHookParam) =
-            try {
-              hook(param)
-            } catch (thr: Throwable) {
-              Log.ex(thr)
-            }
-      })
+    priority: Int = XposedInterface.PRIORITY_DEFAULT,
+    hook: Hooker,
+): HookHandle {
+  return installHook(priority, before = hook)
 }
 
 fun Method.hookAfter(
-    priority: Int = XCallback.PRIORITY_DEFAULT,
-    hooker: Hooker
-): XC_MethodHook.Unhook {
-  return this.hookMethod(
-      object : XC_MethodHook(priority) {
-        override fun afterHookedMethod(param: MethodHookParam) =
-            try {
-              hooker(param)
-            } catch (thr: Throwable) {
-              Log.ex(thr)
-            }
-      })
-}
-
-fun Constructor<*>.hookMethod(hookCallback: XC_MethodHook): XC_MethodHook.Unhook {
-  return XposedBridge.hookMethod(this, hookCallback)
+    priority: Int = XposedInterface.PRIORITY_DEFAULT,
+    hooker: Hooker,
+): HookHandle {
+  return installHook(priority, after = hooker)
 }
 
 fun Constructor<*>.hookAfter(
-    priority: Int = XCallback.PRIORITY_DEFAULT,
-    hooker: Hooker
-): XC_MethodHook.Unhook {
-  return this.hookMethod(
-      object : XC_MethodHook(priority) {
-        override fun afterHookedMethod(param: MethodHookParam) =
-            try {
-              hooker(param)
-            } catch (thr: Throwable) {
-              Log.ex(thr)
-            }
-      })
+    priority: Int = XposedInterface.PRIORITY_DEFAULT,
+    hooker: Hooker,
+): HookHandle {
+  return installHook(priority, after = hooker)
 }
 
-class XposedHookFactory(priority: Int = XCallback.PRIORITY_DEFAULT) : XC_MethodHook(priority) {
+class XposedHookFactory(val priority: Int = XposedInterface.PRIORITY_DEFAULT) {
   private var beforeMethod: Hooker? = null
   private var afterMethod: Hooker? = null
-
-  override fun beforeHookedMethod(param: MethodHookParam) {
-    beforeMethod?.invoke(param)
-  }
-
-  override fun afterHookedMethod(param: MethodHookParam) {
-    afterMethod?.invoke(param)
-  }
 
   fun before(before: Hooker) {
     this.beforeMethod = before
@@ -81,13 +111,16 @@ class XposedHookFactory(priority: Int = XCallback.PRIORITY_DEFAULT) : XC_MethodH
   fun after(after: Hooker) {
     this.afterMethod = after
   }
+
+  internal fun install(method: Method): HookHandle =
+      method.installHook(priority, beforeMethod, afterMethod)
 }
 
 fun Method.hookMethod(
-    priority: Int = XCallback.PRIORITY_DEFAULT,
-    hook: XposedHookFactory.() -> Unit
-): XC_MethodHook.Unhook {
+    priority: Int = XposedInterface.PRIORITY_DEFAULT,
+    hook: XposedHookFactory.() -> Unit,
+): HookHandle {
   val factory = XposedHookFactory(priority)
   hook(factory)
-  return this.hookMethod(factory)
+  return factory.install(this)
 }

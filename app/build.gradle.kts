@@ -2,7 +2,6 @@ import java.util.Properties
 
 plugins {
   id("com.android.application")
-  id("org.jetbrains.kotlin.android")
   id("com.ncorti.ktfmt.gradle")
 }
 
@@ -33,15 +32,15 @@ val hasReleaseSigning =
         .all { !it.isNullOrBlank() }
 
 android {
-  compileSdk = 35
+  compileSdk = 37
   namespace = "org.matrix.chromext"
 
   defaultConfig {
     applicationId = "org.matrix.chromext"
-    minSdk = 21
-    targetSdk = 35
-    versionCode = 18
-    versionName = System.getenv("VERSION_NAME") ?: "3.8.3"
+    minSdk = 26
+    targetSdk = 37
+    versionCode = 19
+    versionName = System.getenv("VERSION_NAME") ?: "3.8.10"
   }
 
   buildFeatures { buildConfig = true }
@@ -85,8 +84,13 @@ android {
             "SetJavaScriptEnabled",
             "UnspecifiedRegisterReceiverFlag",
             "Usability:Icons",
+            "ObsoleteSdkInt",
         )
   }
 }
 
-dependencies { compileOnly("de.robv.android.xposed:api:82") }
+dependencies {
+  compileOnly("androidx.annotation:annotation:1.10.0")
+  compileOnly("io.github.libxposed:api:102.0.0")
+  implementation("io.github.libxposed:service:102.0.0")
+}

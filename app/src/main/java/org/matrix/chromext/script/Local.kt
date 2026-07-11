@@ -82,8 +82,21 @@ object GM {
     if (script.storage != null) GM_info.put("storage", script.storage)
     code = "\ndelete window.__loading__;\n${code};"
     code = localScript.get("globalThis")!! + script.lib.joinToString("\n") + code
+    val fetchParameter =
+        if (script.grant.contains("GM_xmlhttpRequest") ||
+            script.grant.contains("GM.xmlHttpRequest")) {
+          ", fetch=((nativeFetch)=>function(input, init){" +
+              "const request=new Request(input, init);" +
+              "if(new URL(request.url, location.href).origin===location.origin)" +
+              "return nativeFetch(request);" +
+              "request.forceCORS=true;" +
+              "return GM_xmlhttpRequest(request);" +
+              "})(globalThis.fetch.bind(globalThis))"
+        } else {
+          ""
+        }
     codes.add(
-        "(()=>{ const GM = {key:${Local.key}, name:'${Local.name}'}; const GM_info = ${GM_info}; GM_info.script.code = (key=null) => {${code}};\n${grants}GM.bootstrap();})();\n//# sourceURL=local://ChromeXt/${Uri.encode(script.id)}")
+        "(()=>{ const GM = {key:${Local.key}, name:'${Local.name}'}; const GM_info = ${GM_info}; GM_info.script.code = (key=null${fetchParameter}) => {${code}};\n${grants}GM.bootstrap();})();\n//# sourceURL=local://ChromeXt/${Uri.encode(script.id)}")
     return codes
   }
 }
@@ -101,6 +114,7 @@ object Local {
     }
   val customizeDevTool: String
   val eruda: String
+  val erudaStyles: String
   val encoding: String
   val initChromeXt: String
   val openEruda: String
@@ -136,10 +150,23 @@ object Local {
             ctx.assets.open("editor.css").bufferedReader().use { it.readText() }.split("\n\n"))
     val i18n = i18n(ctx)
     customizeDevTool = ctx.assets.open("devtools.js").bufferedReader().use { it.readText() }
+    val erudaCss = ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }
+    val erudaStyleMarkers = listOf("font_fix", "new_icons", "dom_fix", "plugin")
+    val erudaStyleOffsets =
+        erudaStyleMarkers.map { marker ->
+          erudaCss.indexOf("/* ${marker} */").also {
+            check(it >= 0) { "Missing Eruda style section: ${marker}" }
+          }
+        }
     css =
-        JSONArray(ctx.assets.open("eruda.css").bufferedReader().use { it.readText() }.split("\n\n"))
+        JSONArray(
+            erudaStyleOffsets.mapIndexed { index, start ->
+              val end = erudaStyleOffsets.getOrNull(index + 1) ?: erudaCss.length
+              erudaCss.substring(start, end).trim()
+            })
+    erudaStyles = "eruda._styles = ${css};\n"
     eruda =
-        "eruda._styles = ${css};\n" +
+        erudaStyles +
             ctx.assets
                 .open("eruda.js")
                 .bufferedReader()
@@ -187,7 +214,7 @@ object Local {
 
   private fun runtimePanelScript(ctx: Context, i18n: JSONObject): String =
       "globalThis.__chromextI18n = ${i18n};\n" +
-          "globalThis.__ChromeXtManagerUrl = ${JSONObject.quote(LocalServer.managerUrl(ctx, "runtime"))};\n" +
+          "globalThis.__ChromeXtManagerUrl ??= ${JSONObject.quote(LocalServer.managerUrl(ctx, "runtime"))};\n" +
           ctx.assets
               .open("runtime-panel.js")
               .bufferedReader()
@@ -210,4 +237,7 @@ object Local {
     }
     return null
   }
+
+  fun getBundledEruda(ctx: Context = Chrome.getContext()): String =
+      ctx.assets.open("eruda.bundle.js").bufferedReader().use { it.readText() }
 }

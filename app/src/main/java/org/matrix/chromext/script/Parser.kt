@@ -97,7 +97,7 @@ fun parseScript(input: String, storage: String? = null): Script? {
 private fun downloadLib(libUrl: String): String {
   if (libUrl.startsWith("data:")) {
     val chunks = libUrl.split(",").toMutableList()
-    val type = chunks.removeFirst()
+    val type = chunks.removeAt(0)
     val data = Uri.decode(chunks.joinToString(""))
     if (type.endsWith("base64")) {
       return Base64.decode(data, Base64.DEFAULT).toString()

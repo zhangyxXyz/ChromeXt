@@ -10,7 +10,6 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.PopupWindow
 import android.widget.TextView
-import de.robv.android.xposed.XC_MethodHook.Unhook
 import java.lang.Class
 import java.lang.ref.WeakReference
 import org.matrix.chromext.Chrome
@@ -88,18 +87,18 @@ object ContextMenuHook : BaseHook() {
       if (!(view is ViewGroup && view.getChildAt(0) is TextView)) return@hookAfter
       val sampleView = view.getChildAt(0) as TextView
       val textView = TextView(ctx)
-      textView!!.setHorizontallyScrolling(true)
-      textView!!.setSingleLine(true)
-      textView!!.ellipsize = sampleView.ellipsize
-      textView!!.gravity = sampleView.gravity
-      textView!!.transformationMethod = sampleView.transformationMethod
-      textView!!.layoutParams = sampleView.layoutParams
-      textView!!.typeface = sampleView.typeface
-      textView!!.setOnClickListener {
+      textView.setHorizontallyScrolling(true)
+      textView.setSingleLine(true)
+      textView.ellipsize = sampleView.ellipsize
+      textView.gravity = sampleView.gravity
+      textView.transformationMethod = sampleView.transformationMethod
+      textView.layoutParams = sampleView.layoutParams
+      textView.typeface = sampleView.typeface
+      textView.setOnClickListener {
         openChromeXtMenu(Chrome.getUrl()!!)
         popupWindow.dismiss()
       }
-      view.addView(textView!!, view.childCount)
+      view.addView(textView, view.childCount)
       text = WeakReference(textView)
     }
   }
@@ -111,7 +110,7 @@ object ContextMenuHook : BaseHook() {
       val WebViewExtensionClient = Chrome.load("com.qihoo.webkit.extension.WebViewExtensionClient")
       popupWindowFinder =
           WebViewExtensionClient.declaredConstructors.first().hookAfter {
-            val selectionMenuWrapper = it.thisObject
+            val selectionMenuWrapper = it.thisObject!!
             val showSelectionMenu =
                 findMethodOrNull(selectionMenuWrapper::class.java) { name == "showSelectionMenu" }
             if (showSelectionMenu == null) return@hookAfter
@@ -139,7 +138,9 @@ object ContextMenuHook : BaseHook() {
     } else if (Chrome.isMi) {
       val miuiFloatingSelectPopupWindow =
           runCatching {
-                Chrome.load("com.miui.org.chromium.content.browser.miui.MiuiFloatingSelectPopupWindow")
+                Chrome.load(
+                    "com.miui.org.chromium.content.browser.miui.MiuiFloatingSelectPopupWindow"
+                )
               }
               .getOrElse {
                 Log.d("Mi Browser selection menu hook skipped: ${it.message}")
@@ -154,7 +155,8 @@ object ContextMenuHook : BaseHook() {
 
       val selectionPopupController =
           Chrome.load(
-              "com.miui.org.chromium.content.browser.selection.SelectionPopupControllerImpl")
+              "com.miui.org.chromium.content.browser.selection.SelectionPopupControllerImpl"
+          )
       val miuiSelectPopupMenuDelegate =
           Chrome.load("com.miui.org.chromium.content.browser.miui.MiuiSelectPopupMenuDelegate")
       val getDarkOrNightModeEnabled =
@@ -184,15 +186,22 @@ object ContextMenuHook : BaseHook() {
             val shareImageView = mShareImageView.get(popupWindow) as ImageView
             val erudaImageView =
                 createImageView.invoke(
-                    null, context, listener, getDarkOrNightModeEnabled.invoke(delegate))
-                    as ImageView
+                    null,
+                    context,
+                    listener,
+                    getDarkOrNightModeEnabled.invoke(delegate),
+                ) as ImageView
             erudaImageView.setImageResource(R.drawable.ic_devtools)
             erudaImageView.setId(erudaMenuId)
             erudaImageView.getLayoutParams().height = shareImageView.getMeasuredHeight()
             erudaImageView.getLayoutParams().width = shareImageView.getMeasuredWidth()
             val paddingY = contentView.getMeasuredHeight() - shareImageView.getMeasuredHeight() - 10
             erudaImageView.setPadding(
-                shareImageView.paddingLeft, paddingY / 2, shareImageView.paddingRight, paddingY / 2)
+                shareImageView.paddingLeft,
+                paddingY / 2,
+                shareImageView.paddingRight,
+                paddingY / 2,
+            )
             contentView.addView(erudaImageView)
           }
     } else {
@@ -201,7 +210,7 @@ object ContextMenuHook : BaseHook() {
               // public ActionMode startActionMode (ActionMode.Callback callback, int type)
               .hookBefore {
                 if (it.args[1] as Int != ActionMode.TYPE_FLOATING) return@hookBefore
-                hookActionMode(it.args[0]::class.java)
+                hookActionMode(it.args[0]!!::class.java)
               }
     }
     isInit = true

@@ -3,14 +3,17 @@ package org.matrix.chromext
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.pm.PackageInfo
 import android.content.res.ColorStateList
 import android.graphics.Color
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Parcelable
 import android.view.Gravity
 import android.view.View
+import android.view.WindowInsets
 import android.widget.Button
 import android.widget.CompoundButton
 import android.widget.LinearLayout
@@ -23,7 +26,13 @@ import java.util.Locale
 import org.matrix.chromext.utils.Log
 
 class ScriptManagerActivity : Activity() {
-  private val pref by lazy { getSharedPreferences("ChromeXt", Context.MODE_PRIVATE) }
+  private val legacyPref by lazy { getSharedPreferences("ChromeXt", Context.MODE_PRIVATE) }
+  private var remotePref: SharedPreferences? = null
+  private var remotePrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
+  private val serviceStateListener =
+      XposedServiceRepository.Listener { bindRemoteSettings(XposedServiceRepository.settings) }
+  private val pref: SharedPreferences
+    get() = remotePref ?: legacyPref
   private val blue = Color.rgb(37, 99, 235)
   private val pageBg = Color.rgb(245, 247, 251)
   private val cardBg = Color.WHITE
@@ -40,6 +49,29 @@ class ScriptManagerActivity : Activity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
+    XposedServiceRepository.initialize(this)
+    XposedServiceRepository.addListener(serviceStateListener)
+    render()
+  }
+
+  override fun onDestroy() {
+    remotePrefListener?.let { remotePref?.unregisterOnSharedPreferenceChangeListener(it) }
+    XposedServiceRepository.removeListener(serviceStateListener)
+    super.onDestroy()
+  }
+
+  private fun bindRemoteSettings(preferences: SharedPreferences?) {
+    if (remotePref === preferences) {
+      render()
+      return
+    }
+    remotePrefListener?.let { remotePref?.unregisterOnSharedPreferenceChangeListener(it) }
+    remotePref = preferences
+    remotePrefListener =
+        preferences?.let {
+          SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> runOnUiThread { render() } }
+              .also(it::registerOnSharedPreferenceChangeListener)
+        }
     render()
   }
 
@@ -93,7 +125,14 @@ class ScriptManagerActivity : Activity() {
           setPadding(dp(20), dp(20), dp(20), dp(24))
         }
     root.setOnApplyWindowInsetsListener { _, insets ->
-      content.setPadding(dp(20), insets.systemWindowInsetTop + dp(14), dp(20), dp(24))
+      val topInset =
+          if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            insets.getInsets(WindowInsets.Type.systemBars()).top
+          } else {
+            @Suppress("DEPRECATION")
+            insets.systemWindowInsetTop
+          }
+      content.setPadding(dp(20), topInset + dp(14), dp(20), dp(24))
       insets
     }
 
@@ -142,14 +181,13 @@ class ScriptManagerActivity : Activity() {
             buttonTintList = android.content.res.ColorStateList.valueOf(blue)
             id = View.generateViewId()
             isChecked = pref.getString("language", "system") == value
+            isEnabled = remotePref != null
             setPadding(0, dp(4), 0, dp(4))
           })
     }
     group.setOnCheckedChangeListener { rg, checkedId ->
       val selected = rg.findViewById<RadioButton>(checkedId)?.tag as? String ?: return@setOnCheckedChangeListener
-      pref.edit().putString("language", selected).commit()
-      broadcastSettings(language = selected)
-      render()
+      remotePref?.edit()?.putString("language", selected)?.apply()
     }
     card.addView(group)
     return card
@@ -173,11 +211,11 @@ class ScriptManagerActivity : Activity() {
     row.addView(
         Switch(this).apply {
           isChecked = pref.getBoolean("runtime_launcher_enabled", true)
+          isEnabled = remotePref != null
           thumbTintList = tint(blue, Color.WHITE)
           trackTintList = tint(Color.rgb(191, 219, 254), line)
           setOnCheckedChangeListener { _: CompoundButton, checked: Boolean ->
-            pref.edit().putBoolean("runtime_launcher_enabled", checked).commit()
-            broadcastSettings(runtimeLauncherEnabled = checked)
+            remotePref?.edit()?.putBoolean("runtime_launcher_enabled", checked)?.apply()
           }
         })
     card.addView(row)
@@ -188,6 +226,23 @@ class ScriptManagerActivity : Activity() {
     val card = card()
     card.addView(title(tr("脚本管理", "Script Manager")))
     card.addView(body(tr("在已支持的浏览器中打开本地脚本管理页面。", "Open the local script manager in a supported browser.")))
+    if (!XposedServiceRepository.isConnected) {
+      val error = XposedServiceRepository.error
+      card.addView(
+          body(
+              if (error == null) tr("正在连接 Xposed 框架…", "Connecting to the Xposed framework…")
+              else
+                  tr(
+                      "无法连接 Xposed 框架：${error.message ?: error.javaClass.simpleName}",
+                      "Unable to connect to the Xposed framework: ${error.message ?: error.javaClass.simpleName}")))
+      if (error != null) {
+        card.addView(
+            Button(this).apply {
+              text = tr("重试连接", "Retry connection")
+              setOnClickListener { XposedServiceRepository.retry() }
+            })
+      }
+    }
     card.addView(
         Button(this).apply {
           text = tr("打开脚本管理", "Open Script Manager")
@@ -230,13 +285,15 @@ class ScriptManagerActivity : Activity() {
     row.addView(
         Switch(this).apply {
           isChecked = pref.getBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, false)
+          isEnabled = remotePref != null
           thumbTintList = tint(blue, Color.WHITE)
           trackTintList = tint(Color.rgb(191, 219, 254), line)
           setOnCheckedChangeListener { _: CompoundButton, checked: Boolean ->
-            pref.edit().putBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, checked).commit()
+            remotePref
+                ?.edit()
+                ?.putBoolean(LocalServer.PREF_LOCAL_SERVER_ENABLED, checked)
+                ?.apply()
             if (!checked) LocalServer.stop()
-            broadcastSettings(localServerEnabled = checked)
-            render()
           }
         })
     card.addView(row)
@@ -249,23 +306,31 @@ class ScriptManagerActivity : Activity() {
       }
 
   private fun openScriptManager() {
-    val targets = installedSupportedBrowsers()
+    val targets = scopedSupportedBrowsers()
     when (targets.size) {
-      0 -> Log.toast(this, tr("没有找到支持的浏览器", "No supported browser found"))
+      0 ->
+          Log.toast(
+              this,
+              tr(
+                  "没有找到目标，请检查是否已安装支持的浏览器并启用作用域",
+                  "No target found. Check that a supported browser is installed and enabled in the module scope."))
       1 -> startScriptManagerIntent(scriptManagerIntent(targets.first().packageName))
       else -> openScriptManagerChooser(targets)
     }
   }
 
   @Suppress("DEPRECATION")
-  private fun installedSupportedBrowsers(): List<BrowserTarget> =
-      packageManager
-          .getInstalledPackages(0)
+  private fun scopedSupportedBrowsers(): List<BrowserTarget> =
+      runCatching { XposedServiceRepository.getScope() }
+          .getOrElse { emptyList() }
           .asSequence()
-          .filter { it.packageName in supportedPackages }
-          .filter { it.applicationInfo?.enabled != false }
-          .distinctBy { it.packageName }
-          .map { packageInfo ->
+          .filter { it in supportedPackages }
+          .distinct()
+          .mapNotNull { packageName ->
+            val packageInfo =
+                runCatching { packageManager.getPackageInfo(packageName, 0) }.getOrNull()
+                    ?: return@mapNotNull null
+            if (packageInfo.applicationInfo?.enabled == false) return@mapNotNull null
             BrowserTarget(packageInfo.packageName, browserLabel(packageInfo))
           }
           .sortedWith(compareBy<BrowserTarget> { it.label.lowercase(Locale.ROOT) }.thenBy { it.packageName })
@@ -304,22 +369,4 @@ class ScriptManagerActivity : Activity() {
         .onFailure { Log.toast(this, tr("无法打开脚本管理", "Unable to open script manager")) }
   }
 
-  private fun broadcastSettings(
-      runtimeLauncherEnabled: Boolean? = null,
-      language: String? = null,
-      localServerEnabled: Boolean? = null,
-  ) {
-    fun applyExtras(intent: Intent): Intent {
-      runtimeLauncherEnabled?.let { intent.putExtra("runtime_launcher_enabled", it) }
-      language?.let { intent.putExtra("language", it) }
-      localServerEnabled?.let { intent.putExtra(LocalServer.PREF_LOCAL_SERVER_ENABLED, it) }
-      return intent.addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
-    }
-    supportedPackages
-        .filter { runCatching { packageManager.getPackageInfo(it, 0) }.isSuccess }
-        .forEach { packageName ->
-          sendBroadcast(applyExtras(Intent(ACTION_CHROMEXT_SETTINGS_CHANGED).setPackage(packageName)))
-        }
-    sendBroadcast(applyExtras(Intent(ACTION_CHROMEXT_SETTINGS_CHANGED)))
-  }
 }

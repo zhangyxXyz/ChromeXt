@@ -109,13 +109,16 @@ object UserScriptHook : BaseHook() {
         }
         // public void onUpdateTargetUrl(GURL url)
         .hookAfter {
-          val tab = proxy.getTab(it.thisObject)!!
+          val tab = proxy.getTab(it.thisObject!!)!!
           if (!Chrome.isSamsung) Chrome.updateTab(tab)
           var url = proxy.parseUrl(it.args[0])!!
           if (url.isEmpty() && proxy.getUrl != null) {
             url = proxy.parseUrl(proxy.getUrl(tab))!!
           }
-          val isLoading = proxy.mIsLoading.get(tab) as Boolean
+          // Recent Chromium builds no longer expose a stable boolean loading field on TabImpl.
+          // URL update callbacks are emitted for an active navigation, so keep injection working
+          // when the obfuscated field cannot be identified instead of failing the entire hook.
+          val isLoading = (proxy.mIsLoading?.get(tab) as? Boolean) ?: true
           if (!url.startsWith("chrome") && isLoading) {
             ScriptDbManager.invokeScript(url)
           }
@@ -135,7 +138,7 @@ object UserScriptHook : BaseHook() {
                   sourceId.startsWith("local://ChromeXt/init") &&
                   lineNumber == Local.anchorInChromeXt
           ) {
-            Listener.startAction(it.args[1] as String, proxy.getTab(it.thisObject), null, sourceId)
+            Listener.startAction(it.args[1] as String, proxy.getTab(it.thisObject!!), null, sourceId)
           } else {
             Log.d(
                 when (it.args[0] as Int) {
@@ -159,7 +162,7 @@ object UserScriptHook : BaseHook() {
             Log.d("Rewrite local front-end ${url} to ${rewritten}")
             it.args[0] = proxy.newLoadUrlParams(rewritten)
           } else {
-            proxy.userAgentHook(url, it.args[0])
+            proxy.userAgentHook(url, it.args[0]!!)
           }
         }
 

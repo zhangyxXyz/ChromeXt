@@ -158,8 +158,7 @@ object WebViewHook : BaseHook() {
 
   private fun localFrontEndHtml(): String {
     val ctx = Chrome.getContext()
-    val pref = ctx.getSharedPreferences("ChromeXt", android.content.Context.MODE_PRIVATE)
-    val language = JSONObject.quote(pref.getString("language", "system") ?: "system")
+    val language = JSONObject.quote(Chrome.settings.getString("language", "system") ?: "system")
     Resource.enrich(ctx)
     val init =
         Local.initChromeXt +
@@ -190,8 +189,8 @@ object WebViewHook : BaseHook() {
           // Don't use ConsoleMessage to specify this method since Mi Browser uses its own
           // implementation
           // This should be the way to communicate with the front-end of ChromeXt
-          val chromeClient = it.thisObject
-          val consoleMessage = it.args[0]
+          val chromeClient = it.thisObject!!
+          val consoleMessage = it.args[0]!!
           val messageLevel = consoleMessage.invokeMethod { name == "messageLevel" }
           val sourceId = consoleMessage.invokeMethod { name == "sourceId" } as String
           val lineNumber = consoleMessage.invokeMethod { name == "lineNumber" }
@@ -200,19 +199,17 @@ object WebViewHook : BaseHook() {
               sourceId.startsWith("local://ChromeXt/init") &&
               lineNumber == Local.anchorInChromeXt) {
             val webView =
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                  records
-                      .find {
-                        if (Chrome.isQihoo) {
-                              val mProvider = findField(WebView!!) { name == "mProvider" }
-                              mProvider.get(it.get())
-                            } else {
-                              it.get()
-                            }
-                            ?.invokeMethod { name == "getWebChromeClient" } == chromeClient
-                      }
-                      ?.get()
-                } else Chrome.getTab()
+                records
+                    .find {
+                      if (Chrome.isQihoo) {
+                            val mProvider = findField(WebView!!) { name == "mProvider" }
+                            mProvider.get(it.get())
+                          } else {
+                            it.get()
+                          }
+                          ?.invokeMethod { name == "getWebChromeClient" } == chromeClient
+                    }
+                    ?.get()
             Listener.startAction(message, webView, chromeClient, sourceId)
           } else {
             Log.d(messageLevel.toString() + ": [${sourceId}@${lineNumber}] ${message}")
@@ -337,10 +334,10 @@ object WebViewHook : BaseHook() {
           ?.hookMethod {
             before {
               val url = it.args[1] as String
-              if (loadLocalFrontEnd(it.args[0], url)) it.result = null
+              if (loadLocalFrontEnd(it.args[0]!!, url)) it.result = null
             }
             after {
-              if (Chrome.isQihoo && it.thisObject::class.java.declaredMethods.size > 1)
+              if (Chrome.isQihoo && it.thisObject!!::class.java.declaredMethods.size > 1)
                 return@after
               if (isLocalChromeXtResource(it.args[1] as String)) {
                 injectedUrls.getOrPut(it.args[0]) { mutableSetOf() }.remove(it.args[1] as String)
@@ -358,7 +355,7 @@ object WebViewHook : BaseHook() {
                 if (request is String) request
                 else if (it.args.size > 3 && it.args[3] is String) it.args[3] as String
                 else request?.invokeMethod { name == "getUrl" }?.toString()
-            loadLocalFrontEnd(it.args[0], url)
+            loadLocalFrontEnd(it.args[0]!!, url)
           }
 
       findMethodOrNull(cls, true) { name == "onPageCommitVisible" && parameterCount >= 2 }
@@ -401,7 +398,7 @@ object WebViewHook : BaseHook() {
           it.hookMethod {
             before {
               val url = it.args[0] as String
-              if (loadLocalFrontEnd(it.thisObject, url)) it.result = null
+              if (loadLocalFrontEnd(it.thisObject!!, url)) it.result = null
             }
           }
         }

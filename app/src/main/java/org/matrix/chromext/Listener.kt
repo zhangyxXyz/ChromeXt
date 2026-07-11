@@ -340,10 +340,6 @@ object Listener {
             "if(globalThis.__chromextInstallStatus)globalThis.__chromextInstallStatus(${detail});try{(Symbol.${Local.name}&&Symbol.${Local.name}.unlock?Symbol.${Local.name}.unlock(${Local.key}):Symbol.ChromeXt).post('install_status', ${detail});}catch(e){}"
       }
       "notification" -> {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
-          callback = "console.error('notification API requires Android Oreo')"
-          return callback
-        }
         val detail = JSONObject(payload)
         val id = detail.getString("id")
         val uuid = detail.getInt("uuid")
@@ -466,31 +462,60 @@ object Listener {
         }
       }
       "runtimeLauncher" -> {
-        val pref = Chrome.getContext().getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+        val local = Chrome.getContext().getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
         val data = if (payload.isBlank()) JSONObject() else JSONObject(payload)
         if (!data.optBoolean("read")) {
           val side = if (data.optString("side") == "right") "right" else "left"
           val top = data.optDouble("top", 58.0).coerceAtLeast(0.0)
-          pref.edit().putString("runtime_launcher_side", side).putFloat("runtime_launcher_top", top.toFloat()).apply()
+          local
+              .edit()
+              .putString("runtime_launcher_side", side)
+              .putFloat("runtime_launcher_top", top.toFloat())
+              .apply()
         }
         val detail =
             JSONObject(
                 mapOf(
-                    "side" to pref.getString("runtime_launcher_side", "left"),
-                    "top" to pref.getFloat("runtime_launcher_top", 58f).toDouble(),
-                    "enabled" to pref.getBoolean("runtime_launcher_enabled", true),
-                    "language" to pref.getString("language", "system")))
+                    "side" to local.getString("runtime_launcher_side", "left"),
+                    "top" to local.getFloat("runtime_launcher_top", 58f).toDouble(),
+                    "enabled" to Chrome.settings.getBoolean("runtime_launcher_enabled", true),
+                    "language" to Chrome.settings.getString("language", "system"),
+                    "managerUrl" to LocalServer.managerUrl(Chrome.getContext(), "runtime")))
         callback =
             "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeLauncherPosition', ${detail});"
       }
       "settings" -> {
-        val pref = Chrome.getContext().getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
         val detail =
             JSONObject(
                 mapOf(
-                    "runtimeLauncherEnabled" to pref.getBoolean("runtime_launcher_enabled", true),
-                    "language" to pref.getString("language", "system")))
+                    "runtimeLauncherEnabled" to
+                        Chrome.settings.getBoolean("runtime_launcher_enabled", true),
+                    "language" to Chrome.settings.getString("language", "system")))
         callback = "Symbol.${Local.name}.unlock(${Local.key}).post('settings', ${detail});"
+      }
+      "erudaSettings" -> {
+        val local = Chrome.getContext().getSharedPreferences("ChromeXt", Context.MODE_PRIVATE)
+        val data = if (payload.isBlank()) JSONObject() else JSONObject(payload)
+        if (!data.optBoolean("read")) {
+          val editor = local.edit()
+          if (data.has("themeMode")) editor.putString("eruda_theme_mode", data.optString("themeMode", "System"))
+          if (data.has("lightTheme")) editor.putString("eruda_light_theme", data.optString("lightTheme", "Light"))
+          if (data.has("darkTheme")) editor.putString("eruda_dark_theme", data.optString("darkTheme", "Dark"))
+          if (data.has("sourceFormat")) editor.putBoolean("eruda_source_format", data.optBoolean("sourceFormat", true))
+          if (data.has("sourceHighlight")) editor.putBoolean("eruda_source_highlight", data.optBoolean("sourceHighlight", true))
+          if (data.has("sourceLineNumbers")) editor.putBoolean("eruda_source_line_numbers", data.optBoolean("sourceLineNumbers", true))
+          editor.apply()
+        }
+        val detail =
+            JSONObject(
+                mapOf(
+                    "themeMode" to local.getString("eruda_theme_mode", "System"),
+                    "lightTheme" to local.getString("eruda_light_theme", "Light"),
+                    "darkTheme" to local.getString("eruda_dark_theme", "Dark"),
+                    "sourceFormat" to local.getBoolean("eruda_source_format", true),
+                    "sourceHighlight" to local.getBoolean("eruda_source_highlight", true)))
+        detail.put("sourceLineNumbers", local.getBoolean("eruda_source_line_numbers", true))
+        callback = "Symbol.${Local.name}.unlock(${Local.key}).post('erudaSettings', ${detail});"
       }
       "excludeScript" -> {
         val data = JSONObject(payload)
@@ -532,16 +557,49 @@ object Listener {
       "loadEruda" -> {
         val ctx = Chrome.getContext()
         val eruda = File(ctx.filesDir, "Eruda.js")
-        if (eruda.exists()) {
-          val codes =
-              mutableListOf(
-                  FileReader(eruda).use { it.readText() } +
-                      "\n//# sourceURL=${ERUD_URL}@${Local.eruda_version}/eruda.js")
-          codes.add("{${Local.eruda}}\n//# sourceURL=local://ChromeXt/eruda")
-          Chrome.evaluateJavascript(codes, currentTab, frameId)
-        } else {
-          on("updateEruda", JSONObject().put("load", true).toString())
+        val cachedVersion = Local.getErudaVersion(ctx)
+        val official =
+            if (cachedVersion != null && eruda.exists()) {
+              FileReader(eruda).use { it.readText() }
+            } else {
+              Local.getBundledEruda(ctx)
+            }
+        val code =
+            "if(globalThis.eruda&&globalThis.__ChromeXtErudaAdapted){" +
+                "${Local.erudaStyles}" +
+                "globalThis.__ChromeXtRefreshErudaStyles?.();" +
+                "globalThis.__ChromeXtShowEruda?.();" +
+                "}else if(globalThis.eruda){" +
+                "{${Local.eruda}}" +
+                "}else{" +
+                official +
+                "\n{${Local.eruda}}" +
+                "}\n//# sourceURL=local://ChromeXt/load-eruda"
+        Chrome.evaluateJavascript(listOf(code), currentTab, frameId)
+        if (cachedVersion == null) {
+          // The bundled copy makes first/offline use immediate. Refresh the cache silently for
+          // the next load when the network is available.
+          Chrome.IO.submit {
+            checkErudaVerison(ctx) { downloaded ->
+              if (downloaded != null && downloaded != "latest") {
+                File(ctx.filesDir, "Eruda.js").writeText(downloaded)
+              }
+            }
+          }
         }
+      }
+      "hideEruda" -> {
+        Chrome.evaluateJavascript(
+            listOf(
+                "if(globalThis.eruda){" +
+                    "if(globalThis.__ChromeXtHideEruda){globalThis.__ChromeXtHideEruda();}" +
+                    "else{eruda.hide();const entry=eruda._entryBtn?._\$el?.[0];" +
+                    "eruda._entryBtn?.hide?.();" +
+                    "entry?.style?.setProperty('display','none','important');" +
+                    "globalThis.__ChromeXtErudaVisible=false;}" +
+                    "}"),
+            currentTab,
+            frameId)
       }
       "updateEruda" -> {
         val ctx = Chrome.getContext()
@@ -563,6 +621,9 @@ object Listener {
                 file.outputStream().write(it.toByteArray())
               }
               if (payload != "" && JSONObject(payload).optBoolean("load")) on("loadEruda")
+            } else if (payload != "" && JSONObject(payload).optBoolean("load")) {
+              // Network failed and no usable cache is required: load the bundled asset.
+              on("loadEruda")
             }
           }
         }
@@ -750,11 +811,12 @@ object Listener {
           Chrome.IO.submit {
             target?.close()
             hitDevTools().close()
-            target = DevToolClient(targetTabId, "transit")
-            if (!target!!.isClosed()) {
-              DevSessions.add(target!!)
+            val session = DevToolClient(targetTabId, "transit")
+            target = session
+            if (!session.isClosed()) {
+              DevSessions.add(session)
               response(JSONObject(mapOf("open" to true)))
-              target!!.listen { response(JSONObject(mapOf("message" to it))) }
+              session.listen { response(JSONObject(mapOf("message" to it))) }
             }
             response(JSONObject(mapOf("error" to "Remote session closed")))
           }
