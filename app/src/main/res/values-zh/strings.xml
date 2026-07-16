@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">ChromeXt</string>
+    <string name="script_manager">脚本管理</string>
+    <string name="view_in_chrome">在浏览器中打开</string>
+    <string name="xposed_desc">为 Chromium 与 WebView 浏览器提供用户脚本和开发者工具</string>
+    <string name="main_menu_extension">扩展</string>
+    <string name="main_menu_install_script">安装用户脚本</string>
+    <string name="main_menu_developer_tools">开发者工具</string>
+    <string name="main_menu_script_panel">脚本面板</string>
+</resources>

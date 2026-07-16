@@ -1,5 +1,39 @@
 const $ = (selector) => document.querySelector(selector);
 
+const rootStyle = document.documentElement.style;
+const paletteVariables = {
+  primary: "--accent",
+  primaryContainer: "--primary-container",
+  background: "--bg",
+  surface: "--panel",
+  surfaceContainer: "--panel-soft",
+  onSurface: "--text",
+  onSurfaceVariant: "--muted",
+  outline: "--line",
+};
+
+function applyAppearance(appearance = {}) {
+  globalThis.__ChromeXtAppearance = appearance;
+  const palette = appearance.palette || {};
+  if (appearance.seed) rootStyle.setProperty("--accent", appearance.seed);
+  Object.entries(paletteVariables).forEach(([name, variable]) => {
+    if (palette[name]) rootStyle.setProperty(variable, palette[name]);
+  });
+  if (typeof appearance.dark === "boolean") {
+    document.documentElement.dataset.theme = appearance.dark ? "dark" : "light";
+  } else if (appearance.themeMode === "Dark") {
+    document.documentElement.dataset.theme = "dark";
+  } else if (appearance.themeMode === "Light") {
+    document.documentElement.dataset.theme = "light";
+  } else {
+    delete document.documentElement.dataset.theme;
+  }
+  if (appearance.liquidGlass) document.documentElement.dataset.glass = "true";
+  else delete document.documentElement.dataset.glass;
+}
+
+applyAppearance(globalThis.__ChromeXtAppearance || {});
+
 const state = {
   ids: [],
   metas: new Map(),
@@ -7,6 +41,8 @@ const state = {
   source: "",
   dirty: false,
   sourceVisible: false,
+  syntaxHighlight: false,
+  lineNumbers: true,
   skipNextMetaRefresh: false,
 };
 
@@ -24,6 +60,11 @@ const els = {
   includeList: $("#include-list"),
   importFile: $("#import-file"),
   importScripts: $("#import-scripts"),
+  installUrl: $("#install-url"),
+  installUrlCancel: $("#install-url-cancel"),
+  installUrlDialog: $("#install-url-dialog"),
+  installUrlForm: $("#install-url-form"),
+  installUrlInput: $("#install-url-input"),
   list: $("#script-list"),
   matchCount: $("#match-count"),
   matchEditor: $("#match-editor"),
@@ -33,6 +74,12 @@ const els = {
   save: $("#save"),
   search: $("#search"),
   source: $("#source"),
+  sourceHighlight: $("#source-highlight"),
+  sourceLines: $("#source-lines"),
+  sourceWorkspace: $("#source-workspace"),
+  syntaxToggle: $("#syntax-toggle"),
+  linesToggle: $("#lines-toggle"),
+  formatSource: $("#format-source"),
   status: $("#status"),
   excludeList: $("#exclude-list"),
   scriptId: $("#script-id"),
@@ -51,8 +98,11 @@ let languageSetting = globalThis.__ChromeXtLanguage || "system";
 let activeLanguage = resolveLanguage(languageSetting);
 
 function resolveLanguage(value = "system") {
-  if (value === "zh" || value === "en") return value;
-  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const requested = value === "system" ? navigator.language : value;
+  const tag = requested.toLowerCase();
+  if (tag.startsWith("zh-tw") || tag.startsWith("zh-hk") || tag.startsWith("zh-mo") || tag.includes("hant")) return "zh-TW";
+  if (tag.startsWith("zh")) return "zh";
+  return "en";
 }
 
 async function loadMessages() {
@@ -84,7 +134,7 @@ function t(key, values = {}) {
 }
 
 function applyLocale() {
-  document.documentElement.lang = activeLanguage === "zh" ? "zh-CN" : "en";
+  document.documentElement.lang = activeLanguage === "zh-TW" ? "zh-TW" : activeLanguage === "zh" ? "zh-CN" : "en";
   document.querySelectorAll("[data-i18n]").forEach((node) => {
     node.textContent = t(node.dataset.i18n);
   });
@@ -138,6 +188,7 @@ function bindAutoScrollbar(node) {
 
 ChromeXt.addEventListener("settings", async (event) => {
   languageSetting = event.detail?.language || "system";
+  if (event.detail?.appearance) applyAppearance(event.detail.appearance);
   await loadMessages();
   applyLocale();
   if (state.selectedId && state.metas.has(state.selectedId)) renderDetails(state.metas.get(state.selectedId));
@@ -291,6 +342,10 @@ function renderList() {
     const meta = state.metas.get(id) || "";
     const row = document.createElement("div");
     row.className = "script-item" + (id === state.selectedId ? " active" : "");
+    const icon = document.createElement("span");
+    icon.className = "script-icon";
+    icon.textContent = "</>";
+    icon.setAttribute("aria-hidden", "true");
     const button = document.createElement("button");
     button.className = "script-open";
     button.type = "button";
@@ -307,7 +362,7 @@ function renderList() {
       openOverview(id);
     });
     addLongPress(button, () => copyInstallUrl(meta, name));
-    row.append(button, createSwitch(isScriptEnabled(meta), (enabled) => toggleScript(id, enabled)));
+    row.append(icon, button, createSwitch(isScriptEnabled(meta), (enabled) => toggleScript(id, enabled)));
     els.list.append(row);
   });
 }
@@ -349,6 +404,114 @@ function setSourceVisible(visible) {
   state.sourceVisible = visible;
   document.body.classList.toggle("show-source", visible);
   els.viewSource.textContent = visible ? t("details") : t("viewSource");
+  if (visible) requestAnimationFrame(updateSourceDecorations);
+}
+
+function showToast(message) {
+  if (!message) return;
+  send("toast", JSON.stringify({ message }));
+}
+
+const EDITOR_RISK_WARNING_LENGTH = 32 * 1024;
+const MAX_WEB_HIGHLIGHT_LENGTH = 96 * 1024;
+
+function escapeHtml(value) {
+  return value.replace(/[&<>]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[character]);
+}
+
+function highlightJavaScript(source) {
+  const pattern = /(^\s*\/\/\s*(?:==|@)[^\n]*|\/\/[^\n]*|\/\*[\s\S]*?\*\/|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`|\b(?:break|case|catch|class|const|continue|debugger|default|delete|do|else|export|extends|finally|for|function|if|import|in|instanceof|let|new|return|static|super|switch|this|throw|try|typeof|var|void|while|with|yield|async|await|true|false|null|undefined)\b|\b(?:0[xX][0-9a-fA-F]+|\d+(?:\.\d+)?)\b)/gm;
+  let cursor = 0;
+  let output = "";
+  for (const match of source.matchAll(pattern)) {
+    const token = match[0];
+    output += escapeHtml(source.slice(cursor, match.index));
+    const trimmed = token.trimStart();
+    const kind =
+      /^\/\/\s*(?:==|@)/.test(trimmed) ? "meta" :
+      trimmed.startsWith("//") || trimmed.startsWith("/*") ? "comment" :
+      /^["'`]/.test(trimmed) ? "string" :
+      /^\d|^0[xX]/.test(trimmed) ? "number" : "keyword";
+    output += `<span class="token-${kind}">${escapeHtml(token)}</span>`;
+    cursor = match.index + token.length;
+  }
+  return output + escapeHtml(source.slice(cursor)) + "\n";
+}
+
+function updateToggle(button, active) {
+  button.classList.toggle("active", active);
+  button.setAttribute("aria-pressed", String(active));
+}
+
+function updateSourceDecorations() {
+  const source = els.source.value;
+  const lineCount = Math.max(1, source.split("\n").length);
+  els.sourceLines.textContent = Array.from({ length: lineCount }, (_, index) => index + 1).join("\n") + "\n";
+  els.sourceWorkspace.classList.toggle("with-lines", state.lineNumbers);
+  const highlightActive = state.syntaxHighlight && source.length <= MAX_WEB_HIGHLIGHT_LENGTH;
+  els.sourceWorkspace.classList.toggle("highlighted", highlightActive);
+  if (highlightActive) els.sourceHighlight.innerHTML = highlightJavaScript(source);
+  updateToggle(els.syntaxToggle, state.syntaxHighlight);
+  updateToggle(els.linesToggle, state.lineNumbers);
+  syncSourceScroll();
+}
+
+function syncSourceScroll() {
+  els.sourceLines.style.transform = `translateY(${-els.source.scrollTop}px)`;
+  els.sourceHighlight.style.transform = `translate(${-els.source.scrollLeft}px, ${-els.source.scrollTop}px)`;
+}
+
+function confirmEditorRisk() {
+  if (els.source.value.length <= EDITOR_RISK_WARNING_LENGTH) return true;
+  return confirm(t("largeScriptWarning", { size: Math.max(1, Math.round(els.source.value.length / 1024)) }));
+}
+
+function toggleSyntaxHighlight() {
+  if (state.syntaxHighlight) {
+    state.syntaxHighlight = false;
+  } else {
+    if (els.source.value.length > MAX_WEB_HIGHLIGHT_LENGTH) {
+      alert(t("highlightUnavailable", { size: Math.max(1, Math.round(els.source.value.length / 1024)) }));
+      return;
+    }
+    if (!confirmEditorRisk()) return;
+    state.syntaxHighlight = true;
+  }
+  updateSourceDecorations();
+}
+
+function toggleLineNumbers() {
+  if (!state.lineNumbers && !confirmEditorRisk()) return;
+  state.lineNumbers = !state.lineNumbers;
+  updateSourceDecorations();
+}
+
+function formatJavaScript(source) {
+  let indent = 0;
+  return source.replace(/\r\n?/g, "\n").split("\n").map((rawLine) => {
+    const line = rawLine.trim();
+    if (!line) return "";
+    const preDedent = /^[}\])]/.test(line) ? 1 : 0;
+    const opening = (line.match(/[{[(]/g) || []).length;
+    const closing = (line.match(/[}\])]/g) || []).length;
+    const formatted = `${"  ".repeat(Math.max(0, indent - preDedent))}${line}`;
+    indent = Math.max(0, indent + opening - closing);
+    return formatted;
+  }).join("\n");
+}
+
+function formatCurrentSource() {
+  if (!confirmEditorRisk()) return;
+  const formatted = formatJavaScript(els.source.value);
+  if (formatted !== els.source.value) {
+    els.source.value = formatted;
+    state.source = formatted;
+    state.dirty = true;
+    els.save.disabled = formatted.trim().length === 0;
+  }
+  els.formatSource.classList.add("active");
+  setTimeout(() => els.formatSource.classList.remove("active"), 220);
+  updateSourceDecorations();
 }
 
 function normalizeRuleEditorValue(value) {
@@ -419,7 +582,12 @@ function requestReinstall(ids) {
 function exportScripts() {
   if (state.ids.length === 0) return;
   els.status.textContent = t("exportingScripts");
-  send("userscript", JSON.stringify({ export: true }));
+  send("userscript", JSON.stringify({ appTransfer: "export" }));
+}
+
+function importScripts() {
+  els.status.textContent = t("importingLatestScripts");
+  send("userscript", JSON.stringify({ appTransfer: "import" }));
 }
 
 function saveExportFile(detail = {}) {
@@ -442,6 +610,29 @@ function sourcesFromImportText(text) {
     }
   } catch {}
   return trimmed.includes("// ==UserScript==") ? [text] : [];
+}
+
+function openUrlInstaller() {
+  els.installUrlInput.value = "";
+  els.installUrlInput.setCustomValidity("");
+  els.installUrlDialog.showModal();
+  requestAnimationFrame(() => els.installUrlInput.focus());
+}
+
+function submitUrlInstaller(event) {
+  event.preventDefault();
+  const value = els.installUrlInput.value.trim();
+  let url;
+  try {
+    url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+  } catch {
+    els.installUrlInput.setCustomValidity(t("invalidUserscriptUrl"));
+    els.installUrlInput.reportValidity();
+    return;
+  }
+  els.installUrlInput.setCustomValidity("");
+  location.assign(url.href);
 }
 
 async function importSelectedFiles() {
@@ -482,6 +673,8 @@ function setOverview(id, updateHistory = true) {
   state.selectedId = id;
   state.source = "";
   state.dirty = false;
+  state.syntaxHighlight = false;
+  state.lineNumbers = true;
   setSourceVisible(false);
   els.source.value = "";
   els.scriptId.textContent = id;
@@ -503,6 +696,8 @@ function setEditor({ id = "", source = "" }, updateHistory = true) {
   state.selectedId = id;
   state.source = source;
   state.dirty = false;
+  state.syntaxHighlight = false;
+  state.lineNumbers = true;
   const meta = source.match(/^[\s\S]*?\/\/ ==\/UserScript==\s+/)?.[0] || "";
   if (meta) state.metas.set(id, meta);
   els.source.value = source;
@@ -621,8 +816,50 @@ ChromeXt?.addEventListener("script_saved", (event) => {
   els.save.disabled = false;
   send("userscript", "");
   if (id) send("userscript", JSON.stringify({ read: id }));
+  showToast(t("scriptSavedToast"));
 });
 ChromeXt?.addEventListener("script_export", (event) => saveExportFile(event.detail || {}));
+let transferPollTimer = null;
+ChromeXt?.addEventListener("script_transfer_picker", () => {
+  els.status.textContent = t("selectTransferDirectory");
+});
+ChromeXt?.addEventListener("script_transfer_started", () => {
+  clearInterval(transferPollTimer);
+  let attempts = 0;
+  transferPollTimer = setInterval(() => {
+    send("userscript", JSON.stringify({ transferStatus: true }));
+    attempts += 1;
+    if (attempts >= 120) clearInterval(transferPollTimer);
+  }, 500);
+});
+ChromeXt?.addEventListener("script_transfer_complete", (event) => {
+  clearInterval(transferPollTimer);
+  transferPollTimer = null;
+  const detail = event.detail || {};
+  if (detail.status === "cancelled") {
+    els.status.textContent = detail.message || t("transferCancelled");
+    return;
+  }
+  if (detail.status === "error") {
+    els.status.textContent = detail.message || t("scriptActionFailed");
+    return;
+  }
+  if (detail.action === "import") {
+    const message = t("importedScripts", {
+      count: detail.imported || 0,
+      failed: detail.failed || 0,
+    });
+    els.status.textContent = message;
+    showToast(message);
+    send("userscript", "");
+  } else {
+    const message = t("exportedToConfiguredDirectory", {
+      count: detail.count || 0,
+    });
+    els.status.textContent = message;
+    showToast(message);
+  }
+});
 ChromeXt?.addEventListener("script_imported", (event) => {
   const detail = event.detail || {};
   els.status.textContent = t("importedScripts", {
@@ -633,10 +870,12 @@ ChromeXt?.addEventListener("script_imported", (event) => {
 });
 ChromeXt?.addEventListener("script_reinstalled", (event) => {
   const detail = event.detail || {};
-  els.status.textContent = t("reinstalledScripts", {
+  const message = t("reinstalledScripts", {
     count: detail.updated || 0,
     failed: detail.failed || 0,
   });
+  els.status.textContent = message;
+  showToast(message);
   els.batchReinstall.disabled = false;
   els.reinstall.disabled = !installUrlFromMeta(state.metas.get(state.selectedId) || "");
   send("userscript", "");
@@ -646,6 +885,7 @@ ChromeXt?.addEventListener("script_meta_saved", (event) => {
   if (id) state.selectedId = id;
   state.dirty = false;
   els.save.disabled = true;
+  showToast(t("scriptSavedToast"));
   if (state.skipNextMetaRefresh) {
     state.skipNextMetaRefresh = false;
     return;
@@ -663,13 +903,18 @@ els.back.addEventListener("click", () => {
 els.batchReinstall.addEventListener("click", () => requestReinstall(state.ids));
 els.delete.addEventListener("click", deleteScript);
 els.exportScripts.addEventListener("click", exportScripts);
-els.importFile.addEventListener("change", importSelectedFiles);
-els.importScripts.addEventListener("click", () => els.importFile.click());
+els.importScripts.addEventListener("click", importScripts);
+els.installUrl.addEventListener("click", openUrlInstaller);
+els.installUrlCancel.addEventListener("click", () => els.installUrlDialog.close());
+els.installUrlForm.addEventListener("submit", submitUrlInstaller);
 els.newScript.addEventListener("click", newScript);
 els.reinstall.addEventListener("click", () => requestReinstall([state.selectedId]));
 els.save.addEventListener("click", saveScript);
 els.search.addEventListener("input", renderList);
 els.viewSource.addEventListener("click", openSource);
+els.syntaxToggle.addEventListener("click", toggleSyntaxHighlight);
+els.linesToggle.addEventListener("click", toggleLineNumbers);
+els.formatSource.addEventListener("click", formatCurrentSource);
 els.enabledToggle.addEventListener("change", () => {
   if (!state.selectedId) return;
   toggleScript(state.selectedId, els.enabledToggle.checked);
@@ -681,13 +926,23 @@ els.source.addEventListener("input", () => {
   state.dirty = true;
   state.source = els.source.value;
   els.save.disabled = els.source.value.trim().length === 0;
+  updateSourceDecorations();
 });
+
+window.addEventListener("focus", () => {
+  send("userscript", JSON.stringify({ transferStatus: true }));
+});
+els.source.addEventListener("scroll", syncSourceScroll, { passive: true });
 els.source.addEventListener("keydown", (event) => {
   if (event.key !== "Tab") return;
   event.preventDefault();
   const start = els.source.selectionStart;
   const end = els.source.selectionEnd;
   els.source.setRangeText("  ", start, end, "end");
+  state.source = els.source.value;
+  state.dirty = true;
+  els.save.disabled = false;
+  updateSourceDecorations();
 });
 
 window.addEventListener("popstate", () => {

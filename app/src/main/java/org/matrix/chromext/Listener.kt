@@ -13,22 +13,20 @@ import android.content.IntentFilter
 import android.graphics.BitmapFactory
 import android.graphics.drawable.Icon
 import android.os.Build
-import android.os.Environment
 import android.os.Handler
 import android.webkit.WebView
 import java.io.File
 import java.io.FileReader
 import java.net.HttpURLConnection
 import java.net.URL
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.devtools.DevSessions
 import org.matrix.chromext.devtools.DevToolClient
 import org.matrix.chromext.devtools.getInspectPages
 import org.matrix.chromext.devtools.hitDevTools
+import org.matrix.chromext.bridge.BrowserScriptApi
+import org.matrix.chromext.bridge.BrowserBridgeClient
 import org.matrix.chromext.extension.LocalFiles
 import org.matrix.chromext.hook.UserScriptHook
 import org.matrix.chromext.hook.WebViewHook
@@ -127,37 +125,36 @@ object Listener {
     return cleaned.substring(0, end.range.first) + "// @disable\n" + cleaned.substring(end.range.first)
   }
 
-  private fun exportScriptsToDownload(): JSONObject {
-    val scripts =
-        JSONArray(
-            ScriptDbManager.scripts.map {
-              JSONObject(
-                  mapOf(
-                      "id" to it.id,
-                      "source" to it.meta + it.code,
-                      "installURL" to installUrlFromMeta(it.meta)))
-            })
-    val backup =
-        JSONObject(
-            mapOf(
-                "type" to "ChromeXtUserScriptBackup",
-                "version" to 1,
-                "exportedAt" to
-                    SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ", Locale.US).format(Date()),
-                "scripts" to scripts))
-    val dir =
-        File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "ChromeXt")
-    dir.mkdirs()
-    val file =
-        File(
-            dir,
-            "chromext-userscripts-" +
-                SimpleDateFormat("yyyy-MM-dd-HHmmss", Locale.US).format(Date()) +
-                ".json")
-    file.writeText(backup.toString(2), Charsets.UTF_8)
-    return JSONObject(mapOf("count" to scripts.length(), "path" to file.absolutePath))
+  private fun transferScripts(
+      action: String,
+      currentTab: Any?,
+      frameId: String?,
+  ) {
+    val normalized =
+        if (action == ScriptTransferContract.ACTION_IMPORT) {
+          ScriptTransferContract.ACTION_IMPORT
+        } else {
+          ScriptTransferContract.ACTION_EXPORT
+        }
+    Chrome.IO.submit {
+      runCatching {
+            BrowserBridgeClient.requestTransfer(normalized)
+            postToPage(
+                "script_transfer_started",
+                JSONObject(mapOf("action" to normalized)),
+                currentTab,
+                frameId,
+            )
+          }
+          .onFailure {
+            postToPage(
+                "script_error",
+                JSONObject(mapOf("message" to (it.message ?: "脚本数据操作失败"))),
+                currentTab,
+                frameId,
+            )
+          }
+    }
   }
 
   private fun checkPermisson(action: String, key: Double, tab: Any?): Boolean {
@@ -480,6 +477,7 @@ object Listener {
                     "top" to local.getFloat("runtime_launcher_top", 58f).toDouble(),
                     "enabled" to Chrome.settings.getBoolean("runtime_launcher_enabled", true),
                     "language" to Chrome.settings.getString("language", "system"),
+                    "appearance" to BrowserAppearance.payload(Chrome.getContext(), Chrome.settings),
                     "managerUrl" to LocalServer.managerUrl(Chrome.getContext(), "runtime")))
         callback =
             "Symbol.${Local.name}.unlock(${Local.key}).post('runtimeLauncherPosition', ${detail});"
@@ -490,7 +488,8 @@ object Listener {
                 mapOf(
                     "runtimeLauncherEnabled" to
                         Chrome.settings.getBoolean("runtime_launcher_enabled", true),
-                    "language" to Chrome.settings.getString("language", "system")))
+                    "language" to Chrome.settings.getString("language", "system"),
+                    "appearance" to BrowserAppearance.payload(Chrome.getContext(), Chrome.settings)))
         callback = "Symbol.${Local.name}.unlock(${Local.key}).post('settings', ${detail});"
       }
       "erudaSettings" -> {
@@ -655,13 +654,17 @@ object Listener {
           callback = "ChromeXt.post('userscript', ${detail});"
           } else {
             val data = JSONObject(payload)
-          if (data.optBoolean("export")) {
-            runCatching { exportScriptsToDownload() }
-                .onSuccess { callback = "ChromeXt.post('script_export', ${it});" }
-                .onFailure {
-                  callback =
-                      "ChromeXt.post('script_error', ${JSONObject(mapOf("message" to "Export failed: ${it.message}"))});"
-                }
+          val appTransfer =
+              data.optString("appTransfer").ifBlank {
+                if (data.optBoolean("export")) ScriptTransferContract.ACTION_EXPORT else ""
+              }
+          if (data.optBoolean("transferStatus")) {
+            val status = JSONObject(BrowserScriptApi.request("takeTransferStatus", ""))
+            if (status.optBoolean("pending")) {
+              callback = "ChromeXt.post('script_transfer_complete', ${status.getJSONObject("result")});"
+            }
+          } else if (appTransfer.isNotBlank()) {
+            transferScripts(appTransfer, currentTab, frameId)
           } else if (data.has("import")) {
             val sources = data.getJSONArray("import")
             var imported = 0

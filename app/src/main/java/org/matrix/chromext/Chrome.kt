@@ -17,6 +17,7 @@ import java.net.HttpCookie
 import java.util.concurrent.Executors
 import org.json.JSONArray
 import org.json.JSONObject
+import org.matrix.chromext.bridge.BrowserBridgeClient
 import org.matrix.chromext.devtools.DevSessions
 import org.matrix.chromext.devtools.getInspectPages
 import org.matrix.chromext.devtools.hitDevTools
@@ -47,7 +48,12 @@ object Chrome {
         if (key == LocalServer.PREF_LOCAL_SERVER_ENABLED) {
           runCatching { syncRuntimeLauncherSettings() }
         }
-        if (key == null || key == "runtime_launcher_enabled" || key == "language") {
+        if (key == null ||
+            key == "runtime_launcher_enabled" ||
+            key == "language" ||
+            key?.startsWith("ui_theme_") == true ||
+            key == "ui_dynamic_color" ||
+            key == "ui_liquid_glass") {
           runCatching { syncRuntimeLauncherSettings() }
         }
       }
@@ -71,11 +77,12 @@ object Chrome {
   val cookieStore = CookieManager().getCookieStore()
 
   fun init(ctx: Context, packageName: String? = null) {
-    val initialized = mContext != null
     mContext = WeakReference(ctx)
     registerSettingsListener()
 
-    if (initialized || packageName == null) return
+    if (packageName == null) return
+    BrowserBridgeClient.connect(ctx, packageName)
+    if (this.packageName != null) return
     this.packageName = packageName
 
     isBrave =
@@ -137,6 +144,7 @@ object Chrome {
             "top" to local.getFloat("runtime_launcher_top", 58f).toDouble(),
             "enabled" to settings.getBoolean("runtime_launcher_enabled", true),
             "language" to settings.getString("language", "system"),
+            "appearance" to BrowserAppearance.payload(ctx, settings),
             "managerUrl" to LocalServer.managerUrl(ctx, "runtime"),
         )
     )
@@ -144,6 +152,14 @@ object Chrome {
 
   fun syncRuntimeLauncherSettings(ctx: Context = getContext()) {
     broadcast("runtimeLauncherPosition", runtimeLauncherDetail(ctx), false) { true }
+    val detail =
+        JSONObject(
+            mapOf(
+                "runtimeLauncherEnabled" to
+                    settings.getBoolean("runtime_launcher_enabled", true),
+                "language" to settings.getString("language", "system"),
+                "appearance" to BrowserAppearance.payload(ctx, settings)))
+    broadcast("settings", detail, false) { true }
   }
 
   private fun saveRedirectCookie() {

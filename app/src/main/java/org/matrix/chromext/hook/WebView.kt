@@ -17,6 +17,7 @@ import java.net.URLConnection
 import java.util.WeakHashMap
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.BrowserAppearance
 import org.matrix.chromext.Listener
 import org.matrix.chromext.Resource
 import org.matrix.chromext.script.Local
@@ -159,11 +160,13 @@ object WebViewHook : BaseHook() {
   private fun localFrontEndHtml(): String {
     val ctx = Chrome.getContext()
     val language = JSONObject.quote(Chrome.settings.getString("language", "system") ?: "system")
+    val appearance = BrowserAppearance.payload(ctx, Chrome.settings)
     Resource.enrich(ctx)
     val init =
         Local.initChromeXt +
             "\nglobalThis.ChromeXt = Symbol.ChromeXt;\n" +
             "globalThis.__ChromeXtLanguage = ${language};\n" +
+            "globalThis.__ChromeXtAppearance = ${appearance};\n" +
             "//# sourceURL=local://ChromeXt/init"
     return ctx.assets
         .open("frontend/index.html")

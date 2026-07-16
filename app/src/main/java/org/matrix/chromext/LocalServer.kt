@@ -175,16 +175,21 @@ object LocalServer {
 
   private fun localFrontEndHtml(ctx: Context): String {
     val language = JSONObject.quote(Chrome.settings.getString("language", "system") ?: "system")
+    val appearance = BrowserAppearance.payload(ctx, Chrome.settings)
+    val zh =
+        JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })
     val i18n =
         JSONObject(
             mapOf(
                 "en" to JSONObject(ctx.assets.open("frontend/i18n/en.json").bufferedReader().use { it.readText() }),
-                "zh" to JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })))
+                "zh" to zh,
+                "zh-TW" to UiLocalization.traditionalJson(zh)))
     Resource.enrich(ctx)
     val init =
         Local.initChromeXt +
             "\nglobalThis.ChromeXt = Symbol.ChromeXt;\n" +
             "globalThis.__ChromeXtLanguage = ${language};\n" +
+            "globalThis.__ChromeXtAppearance = ${appearance};\n" +
             "globalThis.__ChromeXtI18n = ${i18n};\n" +
             "//# sourceURL=local://ChromeXt/init"
     return ctx.assets

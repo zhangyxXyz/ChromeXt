@@ -1,4 +1,24 @@
 (function () {
+const rootStyle = document.documentElement.style;
+function applyAppearance(appearance = {}) {
+  const palette = appearance.palette || {};
+  globalThis.__ChromeXtAppearance = appearance;
+  const variables = {
+    "--cx-primary": palette.primary || appearance.seed || "#6750a4",
+    "--cx-on-primary": palette.onPrimary || "#ffffff",
+    "--cx-primary-container": palette.primaryContainer || "#eaddff",
+    "--cx-on-primary-container": palette.onPrimaryContainer || "#21005d",
+    "--cx-background": palette.background || "#fffbfe",
+    "--cx-surface": palette.surface || "#fffbfe",
+    "--cx-surface-container": palette.surfaceContainer || "#f3edf7",
+    "--cx-on-surface": palette.onSurface || "#1d1b20",
+    "--cx-on-surface-variant": palette.onSurfaceVariant || "#49454f",
+    "--cx-outline": palette.outline || "#79747e",
+  };
+  Object.entries(variables).forEach(([name, value]) => rootStyle.setProperty(name, value));
+  document.documentElement.dataset.theme = appearance.dark ? "dark" : "light";
+}
+applyAppearance(globalThis.__ChromeXtAppearance || {});
 const isSandboxed = [
   "raw.githubusercontent.com",
   "gist.githubusercontent.com",
@@ -9,14 +29,17 @@ let languageSetting = "system";
 let activeLanguage = resolveLanguage(languageSetting);
 
 function resolveLanguage(value = "system") {
-  if (value === "zh" || value === "en") return value;
-  return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+  const requested = value === "system" ? navigator.language : value;
+  const tag = requested.toLowerCase();
+  if (tag.startsWith("zh-tw") || tag.startsWith("zh-hk") || tag.startsWith("zh-mo") || tag.includes("hant")) return "zh-TW";
+  if (tag.startsWith("zh")) return "zh";
+  return "en";
 }
 
 function setLanguage(value = "system") {
   languageSetting = value;
   activeLanguage = resolveLanguage(value);
-  document.documentElement.lang = activeLanguage === "zh" ? "zh-CN" : "en";
+  document.documentElement.lang = activeLanguage === "zh-TW" ? "zh-TW" : activeLanguage === "zh" ? "zh-CN" : "en";
 }
 
 function t(key, values = {}) {
@@ -27,16 +50,20 @@ function t(key, values = {}) {
 function requestSettings() {
   return new Promise((resolve) => {
     let done = false;
-    const finish = (value = "system") => {
+    const applySettings = (detail = {}) => {
+      setLanguage(detail.language || "system");
+      if (detail.appearance) applyAppearance(detail.appearance);
+    };
+    const finish = (detail = {}) => {
+      applySettings(detail);
       if (done) return;
       done = true;
-      setLanguage(value);
       resolve();
     };
-    const listener = (event) => finish(event.detail?.language || "system");
+    const listener = (event) => finish(event.detail || {});
     Symbol.ChromeXt.addEventListener("settings", listener);
     Symbol.ChromeXt.dispatch("settings", "");
-    setTimeout(() => finish("system"), 500);
+    setTimeout(() => finish({ language: "system" }), 500);
   });
 }
 

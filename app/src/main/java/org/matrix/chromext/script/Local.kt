@@ -8,7 +8,9 @@ import kotlin.random.Random
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.Chrome
+import org.matrix.chromext.BrowserAppearance
 import org.matrix.chromext.LocalServer
+import org.matrix.chromext.UiLocalization
 import org.matrix.chromext.Resource
 import org.matrix.chromext.utils.Log
 import org.matrix.chromext.utils.randomString
@@ -123,7 +125,8 @@ object Local {
   val installRuntimePanelLauncher: String
     get() {
       val ctx = Chrome.getContext()
-      return "globalThis.__ChromeXtOpenRuntimePanel__ = () => {${openRuntimePanel}};\n" +
+      return "globalThis.__ChromeXtAppearance = ${BrowserAppearance.payload(ctx, Chrome.settings)};\n" +
+          "globalThis.__ChromeXtOpenRuntimePanel__ = () => {${openRuntimePanel}};\n" +
           ctx.assets
               .open("runtime-panel-launcher.js")
               .bufferedReader()
@@ -200,20 +203,26 @@ object Local {
     cosmeticFilter = localScript[3]
   }
 
-  private fun i18n(ctx: Context): JSONObject =
-      JSONObject(
-          mapOf(
-              "en" to JSONObject(ctx.assets.open("frontend/i18n/en.json").bufferedReader().use { it.readText() }),
-              "zh" to JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })))
+  private fun i18n(ctx: Context): JSONObject {
+    val zh =
+        JSONObject(ctx.assets.open("frontend/i18n/zh.json").bufferedReader().use { it.readText() })
+    return JSONObject(
+        mapOf(
+            "en" to JSONObject(ctx.assets.open("frontend/i18n/en.json").bufferedReader().use { it.readText() }),
+            "zh" to zh,
+            "zh-TW" to UiLocalization.traditionalJson(zh)))
+  }
 
   private fun editorScript(ctx: Context, i18n: JSONObject, css: JSONArray): String =
       "globalThis._editor_style = ${css}[0];\n" +
           "globalThis.__chromextI18n = ${i18n};\n" +
+          "globalThis.__ChromeXtAppearance = ${BrowserAppearance.payload(ctx, Chrome.settings)};\n" +
           "globalThis.__ChromeXtManagerUrl = ${JSONObject.quote(LocalServer.managerUrl(ctx, "install"))};\n" +
           ctx.assets.open("editor.js").bufferedReader().use { it.readText() }
 
   private fun runtimePanelScript(ctx: Context, i18n: JSONObject): String =
       "globalThis.__chromextI18n = ${i18n};\n" +
+          "globalThis.__ChromeXtAppearance = ${BrowserAppearance.payload(ctx, Chrome.settings)};\n" +
           "globalThis.__ChromeXtManagerUrl ??= ${JSONObject.quote(LocalServer.managerUrl(ctx, "runtime"))};\n" +
           ctx.assets
               .open("runtime-panel.js")

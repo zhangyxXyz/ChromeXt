@@ -29,6 +29,9 @@
         </label>
 
         <div class="library-actions">
+          <button id="install-url" class="ghost-inline" type="button" data-i18n="installFromUrl">
+            Install from URL
+          </button>
           <button id="import-scripts" class="ghost-inline" type="button" data-i18n="importScripts">
             Import
           </button>
@@ -79,37 +82,77 @@
 
         <div id="details" class="details">
           <section>
-            <h3>Match</h3>
+            <h3 data-i18n="matchHeading">Match</h3>
             <div id="match-list" class="rule-list"></div>
             <textarea id="match-editor" class="meta-editor" rows="3" spellcheck="false"></textarea>
           </section>
           <section>
-            <h3>Include</h3>
+            <h3 data-i18n="includeHeading">Include</h3>
             <div id="include-list" class="rule-list"></div>
             <textarea id="include-editor" class="meta-editor" rows="3" spellcheck="false"></textarea>
           </section>
           <section>
-            <h3>Exclude</h3>
+            <h3 data-i18n="excludeHeading">Exclude</h3>
             <div id="exclude-list" class="rule-list"></div>
             <textarea id="exclude-editor" class="meta-editor" rows="3" spellcheck="false"></textarea>
           </section>
           <section>
-            <h3>Grant</h3>
+            <h3 data-i18n="grantHeading">Grant</h3>
             <div id="grant-list" class="rule-list"></div>
           </section>
         </div>
 
-        <textarea
-          id="source"
-          class="source-editor"
-          spellcheck="false"
-          autocomplete="off"
-          autocorrect="off"
-          autocapitalize="off"
-          data-i18n-placeholder="sourcePlaceholder"
-          placeholder="Script source appears here"></textarea>
+        <section id="source-panel" class="source-panel">
+          <div class="source-tool-row">
+            <button id="syntax-toggle" class="editor-toggle" type="button" aria-pressed="false">
+              <span class="toggle-dot"></span><span data-i18n="syntaxHighlight">Syntax highlight</span>
+            </button>
+            <button id="lines-toggle" class="editor-toggle active" type="button" aria-pressed="true">
+              <span class="toggle-dot"></span><span data-i18n="lineNumbers">Line numbers</span>
+            </button>
+            <button id="format-source" class="editor-toggle momentary" type="button" aria-pressed="false">
+              <span class="toggle-dot"></span><span data-i18n="formatSource">Format</span>
+            </button>
+          </div>
+          <div id="source-workspace" class="source-workspace with-lines">
+            <pre id="source-lines" class="source-lines" aria-hidden="true"></pre>
+            <div class="source-code-layer">
+              <pre id="source-highlight" class="source-highlight" aria-hidden="true"></pre>
+              <textarea
+                id="source"
+                class="source-editor"
+                spellcheck="false"
+                autocomplete="off"
+                autocorrect="off"
+                autocapitalize="off"
+                data-i18n-placeholder="sourcePlaceholder"
+                placeholder="Script source appears here"></textarea>
+            </div>
+          </div>
+        </section>
       </section>
     </main>
+
+    <dialog id="install-url-dialog" class="manager-dialog">
+      <form id="install-url-form" method="dialog">
+        <p class="dialog-eyebrow">ChromeXt</p>
+        <h2 data-i18n="installFromUrl">Install from URL</h2>
+        <p class="dialog-message" data-i18n="installUrlHint">
+          Open a userscript URL and continue installation in this browser.
+        </p>
+        <input
+          id="install-url-input"
+          type="url"
+          inputmode="url"
+          required
+          placeholder="https://example.com/script.user.js"
+          data-i18n-placeholder="userscriptUrl" />
+        <div class="dialog-actions">
+          <button id="install-url-cancel" class="ghost-inline" type="button" data-i18n="cancel">Cancel</button>
+          <button class="primary-button" type="submit" data-i18n="install">Install</button>
+        </div>
+      </form>
+    </dialog>
 
     <script src="/app.js" type="module"></script>
   </body>

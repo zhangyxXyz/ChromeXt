@@ -1,4 +1,7 @@
 (() => {
+  const appearance = globalThis.__ChromeXtAppearance || {};
+  const palette = appearance.palette || {};
+  const primary = palette.primary || appearance.seed || "#6750a4";
   const rootId = "__chromext_runtime_panel__";
   const existing = document.getElementById(rootId);
   if (existing) {
@@ -16,8 +19,11 @@
 
   const i18n = globalThis.__chromextI18n || {};
   function resolveLanguage(value = "system") {
-    if (value === "zh" || value === "en") return value;
-    return navigator.language.toLowerCase().startsWith("zh") ? "zh" : "en";
+    const requested = value === "system" ? navigator.language : value;
+    const tag = requested.toLowerCase();
+    if (tag.startsWith("zh-tw") || tag.startsWith("zh-hk") || tag.startsWith("zh-mo") || tag.includes("hant")) return "zh-TW";
+    if (tag.startsWith("zh")) return "zh";
+    return "en";
   }
   const activeLanguage = resolveLanguage(globalThis.__ChromeXtLanguage || "system");
   function t(key, values = {}) {
@@ -44,7 +50,19 @@
   style.textContent = `
     :host {
       all: initial;
-      color-scheme: light dark;
+      color-scheme: ${appearance.dark ? "dark" : "light"};
+      --cx-primary: ${primary};
+      --cx-on-primary: ${palette.onPrimary || "#ffffff"};
+      --cx-primary-container: ${palette.primaryContainer || "#eaddff"};
+      --cx-on-primary-container: ${palette.onPrimaryContainer || "#21005d"};
+      --cx-background: ${palette.background || "#fffbfe"};
+      --cx-surface: ${palette.surface || "#fffbfe"};
+      --cx-surface-container: ${palette.surfaceContainer || "#f3edf7"};
+      --cx-on-surface: ${palette.onSurface || "#1d1b20"};
+      --cx-on-surface-variant: ${palette.onSurfaceVariant || "#49454f"};
+      --cx-outline: ${palette.outline || "#79747e"};
+      --cx-divider: color-mix(in srgb, var(--cx-outline) 44%, transparent);
+      --cx-active: color-mix(in srgb, var(--cx-primary) 10%, var(--cx-surface));
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     .backdrop {
@@ -62,9 +80,9 @@
       max-width: 560px;
       max-height: min(84vh, 720px);
       overflow: hidden;
-      border-radius: 18px 18px 0 0;
-      background: #fff;
-      color: #16181d;
+      border-radius: 28px 28px 0 0;
+      background: var(--cx-surface);
+      color: var(--cx-on-surface);
       box-shadow: 0 -18px 56px rgba(20, 24, 32, .24);
     }
     .header {
@@ -74,7 +92,7 @@
       min-height: 58px;
       box-sizing: border-box;
       padding: 10px 16px 8px;
-      border-bottom: 1px solid #edf0f4;
+      border-bottom: 1px solid var(--cx-divider);
     }
     .icon-btn {
       flex: 0 0 auto;
@@ -83,9 +101,9 @@
       width: 36px;
       height: 36px;
       border: 0;
-      border-radius: 18px;
-      background: #eef2f7;
-      color: #1f2937;
+      border-radius: 16px;
+      background: var(--cx-surface-container);
+      color: var(--cx-on-surface-variant);
       font: 700 18px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       padding: 0;
     }
@@ -103,7 +121,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: #637083;
+      color: var(--cx-on-surface-variant);
       font-size: 11px;
       line-height: 15px;
       font-weight: 750;
@@ -115,13 +133,13 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       margin-top: 1px;
-      color: #111827;
+      color: var(--cx-on-surface);
       font-size: 18px;
       line-height: 24px;
       font-weight: 760;
     }
     .title.script-title {
-      color: #2563eb;
+      color: var(--cx-primary);
     }
     .content {
       overflow: auto;
@@ -157,15 +175,15 @@
       min-height: 64px;
       box-sizing: border-box;
       border: 0;
-      border-bottom: 1px solid #edf0f4;
+      border-bottom: 1px solid var(--cx-divider);
       background: transparent;
-      color: #16181d;
+      color: var(--cx-on-surface);
       padding: 10px 16px;
       text-align: left;
       font: inherit;
     }
     .row:active, .icon-btn:active {
-      background: #f2f5f9;
+      background: var(--cx-active);
     }
     .avatar {
       position: relative;
@@ -174,9 +192,9 @@
       place-items: center;
       width: 36px;
       height: 36px;
-      border-radius: 10px;
-      background: #eef2f7;
-      color: #344054;
+      border-radius: 14px;
+      background: var(--cx-surface-container);
+      color: var(--cx-on-surface-variant);
       font-size: 13px;
       font-weight: 760;
       overflow: hidden;
@@ -207,8 +225,8 @@
       width: 18px;
       height: 2px;
       border-radius: 999px;
-      background: #475467;
-      box-shadow: 0 7px 0 #475467, 0 14px 0 #475467;
+      background: currentColor;
+      box-shadow: 0 7px 0 currentColor, 0 14px 0 currentColor;
       transform: translateX(-50%);
       opacity: .95;
     }
@@ -220,8 +238,8 @@
       width: 4px;
       height: 4px;
       border-radius: 999px;
-      background: #475467;
-      box-shadow: 9px 7px 0 #475467, 3px 14px 0 #475467;
+      background: currentColor;
+      box-shadow: 9px 7px 0 currentColor, 3px 14px 0 currentColor;
     }
     .avatar.icon-manager::before {
       content: "";
@@ -247,7 +265,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      color: #111827;
+      color: var(--cx-on-surface);
       font-size: 16px;
       line-height: 22px;
       font-weight: 680;
@@ -258,7 +276,7 @@
       text-overflow: ellipsis;
       white-space: nowrap;
       margin-top: 3px;
-      color: #667085;
+      color: var(--cx-on-surface-variant);
       font-size: 13px;
       line-height: 18px;
       font-weight: 500;
@@ -269,27 +287,27 @@
       place-items: center;
       width: 34px;
       height: 34px;
-      border-radius: 17px;
-      border: 1px solid #d7dee8;
-      color: #344054;
+      border-radius: 20px;
+      border: 1px solid var(--cx-outline);
+      color: var(--cx-on-surface-variant);
       font-size: 18px;
       line-height: 1;
     }
     .utility {
       margin-top: 8px;
-      border-top: 8px solid #f2f4f7;
+      border-top: 8px solid var(--cx-surface-container);
     }
     .empty {
       padding: 18px 16px;
-      color: #667085;
+      color: var(--cx-on-surface-variant);
       font-size: 14px;
       line-height: 20px;
     }
     .status {
       margin: 10px 16px;
       border-radius: 8px;
-      background: #eff6ff;
-      color: #1d4ed8;
+      background: var(--cx-primary-container);
+      color: var(--cx-on-primary-container);
       padding: 10px 12px;
       font-size: 13px;
       line-height: 18px;
@@ -312,9 +330,9 @@
     .confirm-box {
       width: min(360px, 100%);
       overflow: hidden;
-      border-radius: 16px;
-      background: #fff;
-      color: #111827;
+      border-radius: 24px;
+      background: var(--cx-surface);
+      color: var(--cx-on-surface);
       box-shadow: 0 18px 56px rgba(20, 24, 32, .28);
     }
     .confirm-body {
@@ -322,7 +340,7 @@
     }
     .confirm-title {
       display: block;
-      color: #111827;
+      color: var(--cx-on-surface);
       font-size: 17px;
       line-height: 23px;
       font-weight: 760;
@@ -330,7 +348,7 @@
     .confirm-detail {
       display: block;
       margin-top: 7px;
-      color: #667085;
+      color: var(--cx-on-surface-variant);
       font-size: 13px;
       line-height: 19px;
       word-break: break-word;
@@ -338,23 +356,23 @@
     .confirm-actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      border-top: 1px solid #edf0f4;
+      border-top: 1px solid var(--cx-divider);
     }
     .confirm-action {
       min-height: 48px;
       border: 0;
       background: transparent;
-      color: #344054;
+      color: var(--cx-on-surface-variant);
       font: 700 15px/1 system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     .confirm-action + .confirm-action {
-      border-left: 1px solid #edf0f4;
+      border-left: 1px solid var(--cx-divider);
     }
     .confirm-action.danger {
       color: #dc2626;
     }
     .confirm-action:active {
-      background: #f2f5f9;
+      background: var(--cx-active);
     }
     @media (min-width: 720px) {
       .backdrop {
@@ -362,65 +380,7 @@
       }
       .panel {
         width: min(560px, calc(100vw - 32px));
-        border-radius: 18px;
-      }
-    }
-    @media (prefers-color-scheme: dark) {
-      .backdrop { background: rgba(0, 0, 0, .58); }
-      .panel {
-        background: #181c24;
-        color: #edf0f6;
-        box-shadow: 0 -18px 56px rgba(0, 0, 0, .46);
-      }
-      .header, .row { border-color: #2a3039; }
-      .icon-btn, .avatar {
-        background: #2b3340;
-        color: #f1f5f9;
-      }
-      .avatar.icon-command, .avatar.icon-manager, .avatar.icon-debug {
-        background: rgba(96, 165, 250, .14);
-        color: #93c5fd;
-      }
-      .avatar.icon-manager::before {
-        filter: none;
-        opacity: 1;
-      }
-      .avatar.icon-command::before {
-        background: currentColor;
-        box-shadow: 0 7px 0 currentColor, 0 14px 0 currentColor;
-      }
-      .avatar.icon-command::after {
-        background: currentColor;
-        box-shadow: 9px 7px 0 currentColor, 3px 14px 0 currentColor;
-      }
-      .avatar.icon-ban {
-        background: rgba(248, 113, 113, .16);
-        color: #f87171;
-      }
-      .eyebrow, .secondary, .empty { color: #9ca8ba; }
-      .title, .primary { color: #f8fafc; }
-      .title.script-title { color: #60a5fa; }
-      .status { background: #172554; color: #93c5fd; }
-      .row:active, .icon-btn:active { background: #202632; }
-      .more { border-color: #3a4453; color: #e5e7eb; }
-      .utility { border-color: #202632; }
-      .confirm-backdrop { background: rgba(0, 0, 0, .62); }
-      .confirm-box {
-        background: #181c24;
-        color: #f8fafc;
-        box-shadow: 0 18px 56px rgba(0, 0, 0, .48);
-      }
-      .confirm-title { color: #f8fafc; }
-      .confirm-detail { color: #9ca8ba; }
-      .confirm-actions, .confirm-action + .confirm-action { border-color: #2a3039; }
-      .confirm-action { color: #e5e7eb; }
-      .confirm-action.danger { color: #f87171; }
-      .confirm-action:active { background: #202632; }
-      .content.scrolling {
-        scrollbar-color: rgba(156, 168, 186, .55) transparent;
-      }
-      .content.scrolling::-webkit-scrollbar-thumb {
-        background: rgba(156, 168, 186, .55);
+        border-radius: 28px;
       }
     }
   `;

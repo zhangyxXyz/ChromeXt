@@ -24,19 +24,22 @@
     "place-items:center",
     "width:38px",
     "height:28px",
-    "border-radius:14px",
-    "background:rgba(20,24,31,.72)",
-    "color:#fff",
-    "border:1px solid rgba(255,255,255,.18)",
+    "border-radius:18px",
+    "background:rgba(34,37,43,.52)",
+    "color:rgba(255,255,255,.86)",
+    "border:1px solid rgba(255,255,255,.2)",
     "border-left:0",
-    "box-shadow:0 8px 22px rgba(0,0,0,.28)",
+    "box-shadow:0 8px 24px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.12)",
+    "backdrop-filter:blur(12px) saturate(120%)",
+    "-webkit-backdrop-filter:blur(12px) saturate(120%)",
+    "text-shadow:0 1px 2px rgba(0,0,0,.4)",
     "font:800 13px ui-monospace,SFMono-Regular,Consolas,'Liberation Mono',monospace",
     "letter-spacing:0",
     "touch-action:none",
     "user-select:none",
     "-webkit-user-select:none",
     "transition:left .18s ease, top .18s ease, opacity .18s ease, background .18s ease",
-    "opacity:.76",
+    "opacity:.6",
   ].join(";");
   button.innerHTML = '<span style="display:block;position:relative;width:18px;height:14px;"><span style="position:absolute;left:0;top:3px;width:7px;height:7px;border-left:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg);"></span><span style="position:absolute;right:0;top:3px;width:7px;height:7px;border-right:2px solid currentColor;border-top:2px solid currentColor;transform:rotate(45deg);"></span><span style="position:absolute;left:8px;top:0;width:2px;height:14px;background:currentColor;transform:rotate(14deg);border-radius:2px;"></span></span>';
 
@@ -66,13 +69,13 @@
     const iconEl = icon();
     if (side === "right") {
       button.style.left = `${expanded ? innerWidth - width : innerWidth - peek}px`;
-      button.style.borderRadius = "14px 0 0 14px";
+      button.style.borderRadius = "18px 0 0 18px";
       button.style.borderLeft = "1px solid rgba(255,255,255,.18)";
       button.style.borderRight = "0";
       if (iconEl) iconEl.style.transform = "translateX(-3px)";
     } else {
       button.style.left = `${expanded ? 0 : peek - width}px`;
-      button.style.borderRadius = "0 14px 14px 0";
+      button.style.borderRadius = "0 18px 18px 0";
       button.style.borderLeft = "0";
       button.style.borderRight = "1px solid rgba(255,255,255,.18)";
       if (iconEl) iconEl.style.transform = "translateX(3px)";
@@ -83,21 +86,21 @@
     topPx = clampTop(topPx);
     button.style.top = `${topPx}px`;
     applySideStyle(false);
-    button.style.opacity = ".76";
+    button.style.opacity = ".6";
   }
 
   function expand() {
     topPx = clampTop(topPx);
     button.style.top = `${topPx}px`;
     applySideStyle(true);
-    button.style.opacity = ".96";
+    button.style.opacity = ".78";
   }
 
   function floatAt(x, y) {
     button.style.transition = "none";
     button.style.left = `${Math.max(0, Math.min(innerWidth - width, x))}px`;
     button.style.top = `${clampTop(y)}px`;
-    button.style.borderRadius = "14px";
+    button.style.borderRadius = "18px";
     button.style.borderLeft = "1px solid rgba(255,255,255,.18)";
     button.style.borderRight = "1px solid rgba(255,255,255,.18)";
     const iconEl = icon();
@@ -231,6 +234,24 @@
         return;
       }
       globalThis.__ChromeXtLanguage = data.language || "system";
+      if (data.appearance) {
+        globalThis.__ChromeXtAppearance = data.appearance;
+        const palette = data.appearance.palette || {};
+        const panel = document.getElementById("__chromext_runtime_panel__");
+        if (panel) {
+          panel.style.setProperty("--cx-primary", palette.primary || data.appearance.seed || "#6750a4");
+          panel.style.setProperty("--cx-on-primary", palette.onPrimary || "#ffffff");
+          panel.style.setProperty("--cx-primary-container", palette.primaryContainer || "#eaddff");
+          panel.style.setProperty("--cx-on-primary-container", palette.onPrimaryContainer || "#21005d");
+          panel.style.setProperty("--cx-background", palette.background || "#fffbfe");
+          panel.style.setProperty("--cx-surface", palette.surface || "#fffbfe");
+          panel.style.setProperty("--cx-surface-container", palette.surfaceContainer || "#f3edf7");
+          panel.style.setProperty("--cx-on-surface", palette.onSurface || "#1d1b20");
+          panel.style.setProperty("--cx-on-surface-variant", palette.onSurfaceVariant || "#49454f");
+          panel.style.setProperty("--cx-outline", palette.outline || "#79747e");
+          panel.style.colorScheme = data.appearance.dark ? "dark" : "light";
+        }
+      }
       if (typeof data.managerUrl === "string" && data.managerUrl) {
         globalThis.__ChromeXtManagerUrl = data.managerUrl;
       }

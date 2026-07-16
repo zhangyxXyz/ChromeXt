@@ -40,4 +40,26 @@ dialog#confirm::backdrop{background:rgba(12,18,28,.42);}
 .cx-actions .secondary{flex:1;background:#eef2f7;color:#1f2937;}
 .cx-actions .primary{flex:1.2;background:#2563eb;color:white;box-shadow:0 8px 20px rgba(37,99,235,.24);}
 @media (min-width:720px){body{background:#eef1f5;}#meta{padding-left:max(24px,calc((100vw - 960px)/2));padding-right:max(24px,calc((100vw - 960px)/2));}#code{padding-left:max(24px,calc((100vw - 960px)/2));padding-right:max(24px,calc((100vw - 960px)/2));}dialog#confirm{left:50%;right:auto;bottom:24px;width:min(560px,calc(100vw - 32px));border-radius:18px;transform:translateX(-50%);}.cx-dialog{padding:22px;}.cx-actions{margin:8px -22px -22px;padding:14px 22px 22px;}.cx-pill-list{flex-wrap:wrap;overflow-x:visible;}.cx-pill-list code{max-width:100%;}}
-@media (prefers-color-scheme:dark){html,body{background:#0f1115;color:#edf0f6;}#meta{border-color:#2a3039;background:#171a21;color:#c8d0dc;box-shadow:0 8px 24px rgba(0,0,0,.24);}#code{background:#11141a;color:#e5e7eb;}pre.scrolling,.cx-dialog.scrolling{scrollbar-color:rgba(156,168,186,.55) transparent;}pre.scrolling::-webkit-scrollbar-thumb,.cx-dialog.scrolling::-webkit-scrollbar-thumb{background:rgba(156,168,186,.55);}dialog#confirm{background:#181c24;color:#edf0f6;box-shadow:0 -18px 56px rgba(0,0,0,.46);}dialog#confirm::backdrop{background:rgba(0,0,0,.58);}.cx-dialog h2,.cx-script-name{color:#f8fafc;}.cx-message,.cx-namespace{color:#b4bdca;}.cx-eyebrow{color:#8ea0b8;}.cx-section h3{color:#d6dbe5;}.cx-stats span,.cx-pill-list code{border-color:#313946;background:#202632;color:#e5e7eb;}.cx-pill-list code.muted{color:#93a0b1;}.cx-warning{border-color:#854d0e;background:#2b1d0f;color:#fdba74;}.cx-status.pending{background:#172554;color:#93c5fd;}.cx-status.success{background:#052e1a;color:#86efac;}.cx-status.error{background:#450a0a;color:#fca5a5;}.cx-actions{border-color:#2a3039;background:rgba(24,28,36,.96);}.cx-actions .secondary{background:#2b3340;color:#f1f5f9;}.cx-actions .primary{background:#3b82f6;}}
+/* Material Design 3 palette supplied by the ChromeXt app. */
+:root{--cx-primary:#6750a4;--cx-on-primary:#fff;--cx-primary-container:#eaddff;--cx-on-primary-container:#21005d;--cx-background:#fffbfe;--cx-surface:#fffbfe;--cx-surface-container:#f3edf7;--cx-on-surface:#1d1b20;--cx-on-surface-variant:#49454f;--cx-outline:#79747e;color-scheme:light;}
+:root[data-theme="dark"]{color-scheme:dark;}
+html,body{background:var(--cx-background);color:var(--cx-on-surface);}
+#meta{border-color:var(--cx-outline);background:var(--cx-surface);color:var(--cx-on-surface-variant);}
+#code{background:var(--cx-background);color:var(--cx-on-surface);}
+#meta:focus,#code:focus{outline-color:var(--cx-primary);}
+dialog#confirm{border-radius:28px 28px 0 0;background:var(--cx-surface);color:var(--cx-on-surface);}
+.cx-dialog h2,.cx-script-name{color:var(--cx-on-surface);}
+.cx-message,.cx-namespace,.cx-eyebrow,.cx-section h3{color:var(--cx-on-surface-variant);}
+.cx-stats span,.cx-pill-list code{border-color:var(--cx-outline);border-radius:14px;background:var(--cx-surface-container);color:var(--cx-on-surface);}
+.cx-pill-list code.muted{color:var(--cx-on-surface-variant);}
+.cx-warning,.cx-status,.cx-actions button{border-radius:16px;}
+.cx-actions{border-color:color-mix(in srgb,var(--cx-outline) 45%,transparent);background:color-mix(in srgb,var(--cx-surface) 94%,transparent);}
+.cx-actions .secondary{background:var(--cx-surface-container);color:var(--cx-on-surface-variant);}
+.cx-actions .primary{background:var(--cx-primary);color:var(--cx-on-primary);box-shadow:0 8px 20px color-mix(in srgb,var(--cx-primary) 24%,transparent);}
+.cx-status.pending{background:var(--cx-primary-container);color:var(--cx-on-primary-container);}
+:root[data-theme="dark"] dialog#confirm::backdrop{background:rgba(0,0,0,.58);}
+:root[data-theme="dark"] .cx-warning{border-color:#854d0e;background:#2b1d0f;color:#fdba74;}
+:root[data-theme="dark"] .cx-status.pending{background:#172554;color:#93c5fd;}
+:root[data-theme="dark"] .cx-status.success{background:#052e1a;color:#86efac;}
+:root[data-theme="dark"] .cx-status.error{background:#450a0a;color:#fca5a5;}
+@media (min-width:720px){dialog#confirm{border-radius:28px;}}

@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+	<permission
+		android:name="org.matrix.chromext.permission.BROWSER_BRIDGE"
+		android:protectionLevel="signature" />
+	<uses-permission android:name="org.matrix.chromext.permission.BROWSER_BRIDGE" />
 	<queries>
 		<package android:name="app.vanadium.browser"/>
 		<package android:name="com.android.browser"/>
@@ -34,11 +38,31 @@
 		<package android:name="us.spotco.mulch"/>
 	</queries>
 
+    <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <application
         android:description="@string/xposed_desc"
         android:icon="@mipmap/ic_launcher"
-        android:label="@string/app_name">
+        android:label="@string/app_name"
+        android:theme="@style/Theme.ChromeXt">
+		<service
+			android:name=".bridge.BrowserBridgeService"
+			android:exported="true" />
+		<provider
+			android:name="androidx.core.content.FileProvider"
+			android:authorities="${applicationId}.fileprovider"
+			android:exported="false"
+			android:grantUriPermissions="true">
+			<meta-data
+				android:name="android.support.FILE_PROVIDER_PATHS"
+				android:resource="@xml/file_paths" />
+		</provider>
+		<activity
+			android:name=".ScriptTransferActivity"
+			android:excludeFromRecents="true"
+			android:exported="false"
+			android:theme="@style/Theme.ChromeXt.Transparent" />
 		<activity android:name=".OpenInChrome"
 			android:label="@string/view_in_chrome"
 			android:theme="@android:style/Theme.NoDisplay"
@@ -66,9 +90,13 @@
 		</activity>
 		<activity
 			android:name=".ScriptManagerActivity"
-			android:label="@string/script_manager"
-			android:theme="@android:style/Theme.Material.Light.NoActionBar"
+			android:label="@string/app_name"
+			android:configChanges="locale|layoutDirection"
 			android:exported="true">
+			<intent-filter>
+				<action android:name="android.intent.action.MAIN" />
+				<category android:name="android.intent.category.LAUNCHER" />
+			</intent-filter>
 			<intent-filter>
 				<action android:name="android.intent.action.MAIN" />
 				<category android:name="de.robv.android.xposed.category.MODULE_SETTINGS" />
