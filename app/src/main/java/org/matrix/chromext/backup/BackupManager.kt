@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.net.Uri
 import android.os.Build
+import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
 import java.io.File
 import java.time.LocalDateTime
@@ -24,6 +25,12 @@ data class BackupSettings(
     val localTreeUri: String?,
     val encryptionPassword: String,
     val includeWebDavConfig: Boolean,
+)
+
+data class LocalStorageLocation(
+    val configured: Boolean,
+    val displayPath: String,
+    val isDefault: Boolean,
 )
 
 enum class BackupMode(val includesLocal: Boolean, val includesRemote: Boolean) {
@@ -69,6 +76,16 @@ class BackupManager(private val context: Context) {
           includeWebDavConfig = prefs.getBoolean(KEY_INCLUDE_WEBDAV_CONFIG, false),
       )
 
+  fun localStorageLocation(): LocalStorageLocation {
+    val treeUri = settings().localTreeUri
+    val path = treeUri?.let(::displayLocalPath) ?: DEFAULT_LOCAL_PATH
+    return LocalStorageLocation(
+        configured = !treeUri.isNullOrBlank(),
+        displayPath = path,
+        isDefault = normalizeLocalPath(path) == normalizeLocalPath(DEFAULT_LOCAL_PATH),
+    )
+  }
+
   fun saveSettings(settings: BackupSettings) {
     prefs
         .edit()
@@ -104,6 +121,7 @@ class BackupManager(private val context: Context) {
                 .replace(Regex("[^\\p{L}\\p{N}._-]+"), "-")
                 .trim('-')
                 .ifBlank { "Android" }
+        val browserId = browserDirectoryName(browserPackage)
         val name =
             "${WebDavClient.BACKUP_PREFIX}$deviceName-${LocalDateTime.now().format(FILE_TIME)}.zip"
         if (mode.includesLocal) {
@@ -140,13 +158,22 @@ class BackupManager(private val context: Context) {
         val archive =
             BackupArchive.pack(
                 inputs,
-                File(if (mode.includesLocal) backupDirectory else context.cacheDir, name),
+                File(
+                    if (mode.includesLocal) File(backupDirectory, browserId)
+                    else File(context.cacheDir, "backups/$browserId"),
+                    name,
+                ),
                 config.encryptionPassword,
             )
         var localFile: File? = null
         if (mode.includesLocal) {
-          copyToTree(archive, Uri.parse(config.localTreeUri), config.localRetentionCount)
-          pruneInternal(config.localRetentionCount)
+          copyToTree(
+              archive,
+              Uri.parse(config.localTreeUri),
+              browserPackage,
+              config.localRetentionCount,
+          )
+          pruneInternal(browserPackage, config.localRetentionCount)
           localFile = archive
         }
         var remoteUploaded = false
@@ -156,7 +183,7 @@ class BackupManager(private val context: Context) {
             remoteError = "WebDAV 配置不完整"
           } else {
             runCatching {
-                  WebDavClient(config.webDav).apply {
+                  WebDavClient(config.webDav.forBrowser(browserPackage)).apply {
                     upload(archive)
                     prune(config.remoteRetentionCount)
                   }
@@ -170,33 +197,58 @@ class BackupManager(private val context: Context) {
         BackupResult(localFile, remoteUploaded, remoteError)
       }
 
-  suspend fun localBackups(): List<LocalBackup> =
+  suspend fun localBackups(browserPackage: String): List<LocalBackup> =
       withContext(Dispatchers.IO) {
+        val browserId = browserDirectoryName(browserPackage)
         val external =
             settings().localTreeUri?.let { treeUri ->
-              val tree =
+              val root =
                   DocumentFile.fromTreeUri(context, Uri.parse(treeUri))
                       ?: error("本地备份目录不可用，请重新选择")
-              tree.listFiles().mapNotNull { document ->
-                val name = document.name ?: return@mapNotNull null
-                if (!document.isFile || !isBackupName(name)) return@mapNotNull null
-                LocalBackup(name, document.lastModified(), document.length(), documentUri = document.uri)
-              }
+              val current =
+                  root.findBrowserDirectory(browserPackage)
+                      ?.listFiles()
+                      .orEmpty()
+                      .mapNotNull(::documentBackup)
+              val legacy =
+                  root.listFiles().mapNotNull { document ->
+                    val name = document.name ?: return@mapNotNull null
+                    if (!document.isFile || !isLegacyBackupName(name, browserId)) {
+                      return@mapNotNull null
+                    }
+                    documentBackup(document)
+                  }
+              current + legacy
             }.orEmpty()
         val names = external.mapTo(hashSetOf(), LocalBackup::name)
-        val internal =
-            backupDirectory.listFiles { file -> file.isFile && isBackupName(file.name) }
+        val currentInternal =
+            File(backupDirectory, browserId)
+                .listFiles { file -> file.isFile && isBackupName(file.name) }
                 ?.filterNot { it.name in names }
                 ?.map { LocalBackup(it.name, it.lastModified(), it.length(), internalFile = it) }
                 .orEmpty()
-        (external + internal).sortedByDescending(LocalBackup::modifiedAt)
+        val currentNames = (names + currentInternal.map(LocalBackup::name)).toHashSet()
+        val legacyInternal =
+            backupDirectory.listFiles { file ->
+              file.isFile && isLegacyBackupName(file.name, browserId)
+            }
+                ?.filterNot { it.name in currentNames }
+                ?.map { LocalBackup(it.name, it.lastModified(), it.length(), internalFile = it) }
+                .orEmpty()
+        (external + currentInternal + legacyInternal).sortedByDescending(LocalBackup::modifiedAt)
       }
 
-  suspend fun remoteBackups(): List<RemoteBackup> =
+  suspend fun remoteBackups(browserPackage: String): List<RemoteBackup> =
       withContext(Dispatchers.IO) {
         val config = settings().webDav
         require(config.isConfigured) { "请先配置 WebDAV" }
-        WebDavClient(config).listBackups()
+        val current = WebDavClient(config.forBrowser(browserPackage)).listBackups()
+        val browserId = browserDirectoryName(browserPackage)
+        val legacy =
+            WebDavClient(config).listBackups().filter { isLegacyBackupName(it.name, browserId) }
+        (current + legacy).distinctBy { "${it.directory}/${it.name}" }.sortedByDescending {
+          it.modifiedAt
+        }
       }
 
   suspend fun testWebDav() =
@@ -227,10 +279,12 @@ class BackupManager(private val context: Context) {
 
   suspend fun restore(remote: RemoteBackup, targetPackage: String) {
     val config = settings()
+    val remoteConfig =
+        if (remote.directory.isBlank()) config.webDav.forBrowser(targetPackage)
+        else config.webDav.copy(directory = remote.directory)
     val file =
         withContext(Dispatchers.IO) {
-          WebDavClient(config.webDav)
-              .download(remote.name, File(context.cacheDir, remote.name))
+          WebDavClient(remoteConfig).download(remote.name, File(context.cacheDir, remote.name))
         }
     applyRestore(unpack(file), targetPackage)
   }
@@ -355,8 +409,9 @@ class BackupManager(private val context: Context) {
     editor.commit()
   }
 
-  private fun copyToTree(source: File, treeUri: Uri, keep: Int) {
-    val tree = DocumentFile.fromTreeUri(context, treeUri) ?: error("本地备份目录不可用")
+  private fun copyToTree(source: File, treeUri: Uri, browserPackage: String, keep: Int) {
+    val root = DocumentFile.fromTreeUri(context, treeUri) ?: error("本地备份目录不可用")
+    val tree = root.requireBrowserDirectory(browserPackage)
     tree.findFile(source.name)?.delete()
     val target =
         tree.createFile("application/zip", source.name) ?: error("无法在所选目录创建备份")
@@ -372,9 +427,10 @@ class BackupManager(private val context: Context) {
     }
   }
 
-  private fun pruneInternal(keep: Int) {
+  private fun pruneInternal(browserPackage: String, keep: Int) {
     if (keep == 0) return
-    backupDirectory.listFiles { file -> file.isFile && isBackupName(file.name) }
+    File(backupDirectory, browserDirectoryName(browserPackage))
+        .listFiles { file -> file.isFile && isBackupName(file.name) }
         ?.sortedByDescending(File::lastModified)
         ?.drop(keep)
         ?.forEach(File::delete)
@@ -382,6 +438,21 @@ class BackupManager(private val context: Context) {
 
   private fun isBackupName(name: String) =
       name.startsWith(WebDavClient.BACKUP_PREFIX) && name.endsWith(".zip", ignoreCase = true)
+
+  private fun isLegacyBackupName(name: String, browserId: String) =
+      name.startsWith("${WebDavClient.BACKUP_PREFIX}$browserId-") &&
+          name.endsWith(".zip", ignoreCase = true)
+
+  private fun documentBackup(document: DocumentFile): LocalBackup? {
+    val name = document.name ?: return null
+    if (!document.isFile || !isBackupName(name)) return null
+    return LocalBackup(
+        name,
+        document.lastModified(),
+        document.length(),
+        documentUri = document.uri,
+    )
+  }
 
   private fun File.isJsonDocument(): Boolean =
       inputStream().buffered().use { input ->
@@ -391,6 +462,30 @@ class BackupManager(private val context: Context) {
       }
 
   companion object {
+    const val DEFAULT_LOCAL_PATH = "Documents/ChromeXt"
+
+    fun defaultDocumentsUri(): Uri =
+        DocumentsContract.buildDocumentUri(
+            "com.android.externalstorage.documents",
+            "primary:Documents",
+        )
+
+    fun displayLocalPath(uri: String): String =
+        runCatching {
+              DocumentsContract.getTreeDocumentId(Uri.parse(uri))
+                  .substringAfter(':')
+                  .trim('/')
+                  .ifBlank { "Internal storage" }
+            }
+            .getOrElse {
+              Uri.parse(uri).lastPathSegment?.substringAfter(':')?.trim('/').orEmpty().ifBlank {
+                uri
+              }
+            }
+
+    private fun normalizeLocalPath(path: String): String =
+        path.replace('\\', '/').trim('/').lowercase()
+
     private const val PREFS = "backup_settings"
     private const val KEY_URL = "webdav_url"
     private const val KEY_USER = "webdav_user"

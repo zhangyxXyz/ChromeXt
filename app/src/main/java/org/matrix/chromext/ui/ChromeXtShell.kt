@@ -1,6 +1,9 @@
 package org.matrix.chromext.ui
 
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -28,6 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.Apps
 import androidx.compose.material.icons.rounded.BrowserUpdated
 import androidx.compose.material.icons.rounded.CheckCircle
 import androidx.compose.material.icons.rounded.ChevronRight
@@ -37,6 +41,7 @@ import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.Contrast
 import androidx.compose.material.icons.rounded.DarkMode
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.Home
 import androidx.compose.material.icons.rounded.Http
 import androidx.compose.material.icons.rounded.Info
@@ -45,7 +50,6 @@ import androidx.compose.material.icons.rounded.Palette
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Security
 import androidx.compose.material.icons.rounded.Settings
-import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material.icons.rounded.TouchApp
 import androidx.compose.material.icons.rounded.Update
 import androidx.compose.material3.AlertDialog
@@ -68,6 +72,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -85,6 +90,13 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import org.matrix.chromext.BuildConfig
 import org.matrix.chromext.UiLocalization
+import org.matrix.chromext.backup.BackupManager
+import org.matrix.chromext.backup.ScriptTransferManager
+import org.matrix.chromext.ui.common.NavigationSettingItem
+import org.matrix.chromext.ui.common.SettingGroup
+import org.matrix.chromext.ui.common.SettingItem
+import org.matrix.chromext.ui.common.SettingLeadingIcon
+import org.matrix.chromext.ui.common.SwitchSettingItem
 import org.matrix.chromext.ui.glass.LiquidGlassBottomBar
 import org.matrix.chromext.ui.glass.LiquidGlassBottomBarItem
 
@@ -100,6 +112,7 @@ enum class SettingsPage {
   Language,
   Backup,
   About,
+  ReleaseHistory,
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -114,7 +127,9 @@ fun ChromeXtShell(controller: ChromeXtController) {
     drawContent()
   }
   BackHandler(enabled = controller.settingsPage != SettingsPage.Root) {
-    controller.settingsPage = SettingsPage.Root
+    controller.settingsPage =
+        if (controller.settingsPage == SettingsPage.ReleaseHistory) SettingsPage.About
+        else SettingsPage.Root
   }
   BackHandler(
       enabled = controller.settingsPage == SettingsPage.Root && controller.currentTab != MainTab.Home) {
@@ -127,6 +142,7 @@ fun ChromeXtShell(controller: ChromeXtController) {
         SettingsPage.Language -> tx(chinese, "语言", "Language")
         SettingsPage.Backup -> tx(chinese, "备份与恢复", "Backup and restore")
         SettingsPage.About -> tx(chinese, "关于", "About")
+        SettingsPage.ReleaseHistory -> tx(chinese, "更新历史", "Release history")
         SettingsPage.Root ->
             when (controller.currentTab) {
               MainTab.Home -> "ChromeXt"
@@ -141,7 +157,15 @@ fun ChromeXtShell(controller: ChromeXtController) {
             title = { Text(title, fontWeight = FontWeight.SemiBold) },
             navigationIcon = {
               if (controller.settingsPage != SettingsPage.Root) {
-                IconButton(onClick = { controller.settingsPage = SettingsPage.Root }) {
+                IconButton(
+                    onClick = {
+                      controller.settingsPage =
+                          if (controller.settingsPage == SettingsPage.ReleaseHistory) {
+                            SettingsPage.About
+                          } else {
+                            SettingsPage.Root
+                          }
+                    }) {
                   Icon(
                       Icons.AutoMirrored.Rounded.ArrowBack,
                       tx(chinese, "返回", "Back"),
@@ -178,6 +202,7 @@ fun ChromeXtShell(controller: ChromeXtController) {
             SettingsPage.Language -> LanguageSettingsScreen(controller)
             SettingsPage.Backup -> BackupLandingScreen(controller)
             SettingsPage.About -> AboutSettingsScreen(controller)
+            SettingsPage.ReleaseHistory -> ReleaseHistoryScreen(controller)
             SettingsPage.Root ->
                 when (controller.currentTab) {
                   MainTab.Home -> HomeScreen(controller)
@@ -263,8 +288,36 @@ private fun tabIcon(tab: MainTab): ImageVector =
 
 @Composable
 private fun HomeScreen(controller: ChromeXtController) {
-  controller.revision
+  val revision = controller.revision
   val chinese = controller.isChinese
+  val transferManager = remember { ScriptTransferManager(controller.context) }
+  var exportLocation by remember { mutableStateOf(transferManager.storageLocation()) }
+  LaunchedEffect(revision) { exportLocation = transferManager.storageLocation() }
+  val exportDirectoryPicker =
+      rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri ?: return@rememberLauncherForActivityResult
+        runCatching { transferManager.setDirectory(uri) }
+            .onSuccess {
+              exportLocation = transferManager.storageLocation()
+              controller.refresh()
+              Toast.makeText(
+                      controller.context,
+                      tx(chinese, "脚本导出目录已设置", "Script export folder updated"),
+                      Toast.LENGTH_SHORT)
+                  .show()
+            }
+            .onFailure { failure ->
+              Toast.makeText(
+                      controller.context,
+                      UiLocalization.error(
+                          chinese,
+                          failure.localizedMessage,
+                          "目录设置失败",
+                          "Could not set folder"),
+                      Toast.LENGTH_LONG)
+                  .show()
+            }
+      }
   LazyColumn(
       modifier = Modifier.fillMaxSize(),
       contentPadding = PaddingValues(18.dp, 10.dp, 18.dp, 28.dp),
@@ -294,28 +347,20 @@ private fun HomeScreen(controller: ChromeXtController) {
             modifier = Modifier.weight(1f),
         )
         DashboardCard(
-            title = tx(chinese, "网页悬浮入口", "Page launcher"),
+            title = tx(chinese, "已连接浏览器", "Connected browsers"),
             value =
-                when {
-                  !controller.isConnected -> tx(chinese, "不可用", "Unavailable")
-                  controller.runtimeLauncherEnabled() -> tx(chinese, "已开启", "Enabled")
-                  else -> tx(chinese, "已关闭", "Disabled")
-                },
-            icon = Icons.Rounded.TouchApp,
-            modifier = Modifier.weight(1f),
-            onClick =
                 if (controller.isConnected) {
-                  {
-                    controller.setRuntimeLauncherEnabled(!controller.runtimeLauncherEnabled())
-                  }
+                  controller.connectedBrowserTargets().size.toString()
                 } else {
-                  null
+                  tx(chinese, "不可用", "Unavailable")
                 },
+            icon = Icons.Rounded.BrowserUpdated,
+            modifier = Modifier.weight(1f),
         )
       }
     }
     item {
-      SectionCard(tx(chinese, "快速操作", "Quick actions")) {
+      SectionCard(tx(chinese, "脚本与网页", "Scripts and pages")) {
         ActionRow(
             Icons.Rounded.Code,
             tx(chinese, "打开脚本管理", "Open script manager"),
@@ -323,6 +368,13 @@ private fun HomeScreen(controller: ChromeXtController) {
         ) {
           controller.openScriptManager()
         }
+        SwitchRow(
+            Icons.Rounded.TouchApp,
+            tx(chinese, "开启悬浮入口", "Enable floating launcher"),
+            tx(chinese, "在网页边缘显示运行时脚本面板入口", "Show the runtime panel launcher on page edges"),
+            controller.runtimeLauncherEnabled(),
+            controller::setRuntimeLauncherEnabled,
+        )
         SwitchRow(
             Icons.Rounded.Http,
             tx(chinese, "本地 HTTP 服务", "Local HTTP server"),
@@ -334,11 +386,23 @@ private fun HomeScreen(controller: ChromeXtController) {
     }
     item {
       SectionCard(tx(chinese, "数据", "Data")) {
-        InfoRow(
-            Icons.Rounded.Storage,
-            tx(chinese, "脚本数据", "Script data"),
-            tx(chinese, "按浏览器独立保存在各自数据库中", "Stored separately in each browser database"),
-        )
+        ActionRow(
+            Icons.Rounded.FolderOpen,
+            tx(chinese, "脚本导出目录", "Script export folder"),
+            if (exportLocation.configured) {
+              tx(
+                  chinese,
+                  "${exportLocation.displayPath} · ${if (exportLocation.isDefault) "默认目录" else "自定义目录"} · 自动按浏览器包名分目录",
+                  "${exportLocation.displayPath} · ${if (exportLocation.isDefault) "Default folder" else "Custom folder"} · Browser package subfolders are created automatically")
+            } else {
+              tx(
+                  chinese,
+                  "未设置 · 建议默认：${exportLocation.displayPath} · 自动按浏览器包名分目录",
+                  "Not set · Recommended: ${exportLocation.displayPath} · Browser package subfolders are created automatically")
+            },
+        ) {
+          exportDirectoryPicker.launch(BackupManager.defaultDocumentsUri())
+        }
         ActionRow(
             Icons.Rounded.Backup,
             tx(chinese, "备份与恢复", "Backup and restore"),
@@ -429,23 +493,16 @@ private fun SettingsScreen(controller: ChromeXtController) {
         ) {
           controller.settingsPage = SettingsPage.Language
         }
-      }
-    }
-    item {
-      SectionCard(tx(chinese, "脚本与页面", "Scripts and pages")) {
         SwitchRow(
-            Icons.Rounded.TouchApp,
-            tx(chinese, "开启悬浮入口", "Enable floating launcher"),
-            tx(chinese, "在网页边缘显示运行时脚本面板入口", "Show the runtime panel launcher on page edges"),
-            controller.runtimeLauncherEnabled(),
-            controller::setRuntimeLauncherEnabled,
-        )
-        SwitchRow(
-            Icons.Rounded.Http,
-            tx(chinese, "本地 HTTP 服务", "Local HTTP server"),
-            tx(chinese, "Chrome 推荐开启\n小米浏览器通常无需开启", "Recommended for Chrome\nUsually unnecessary for Mi Browser"),
-            controller.localServerEnabled(),
-            controller::setLocalServerEnabled,
+            Icons.Rounded.Apps,
+            tx(chinese, "显示桌面图标", "Show launcher icon"),
+            if (controller.desktopIconVisible()) {
+              tx(chinese, "可从桌面直接打开 ChromeXt", "Open ChromeXt directly from the launcher")
+            } else {
+              tx(chinese, "已隐藏，请从 LSPosed 模块页打开", "Hidden; open it from the LSPosed module page")
+            },
+            controller.desktopIconVisible(),
+            controller::setDesktopIconVisible,
         )
       }
     }
@@ -597,7 +654,9 @@ private fun AboutScreen(controller: ChromeXtController) {
             }
           }
     }
-    item { UpdateSection(controller) }
+    item {
+      UpdateSection(controller) { controller.settingsPage = SettingsPage.ReleaseHistory }
+    }
     item {
       SectionCard(tx(chinese, "项目", "Project")) {
         InfoRow(
@@ -703,29 +762,12 @@ private fun DashboardCard(
 
 @Composable
 private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-  Card(
-      Modifier.fillMaxWidth(),
-      shape = RoundedCornerShape(24.dp),
-      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
-          Text(title, Modifier.padding(horizontal = 20.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-          content()
-        }
-      }
+  SettingGroup(title, content = content)
 }
 
 @Composable
 private fun ActionRow(icon: ImageVector, title: String, detail: String, onClick: () -> Unit) {
-  Row(
-      Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 11.dp),
-      verticalAlignment = Alignment.CenterVertically) {
-        SettingIcon(icon)
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
-          Text(title)
-          Text(detail, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-      }
+  NavigationSettingItem(title = title, description = detail, icon = icon, onClick = onClick)
 }
 
 @Composable
@@ -736,36 +778,23 @@ private fun SwitchRow(
     checked: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-  Row(
-      Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 9.dp),
-      verticalAlignment = Alignment.CenterVertically) {
-        SettingIcon(icon)
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
-          Text(title)
-          Text(detail, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked = checked, onCheckedChange = onChange)
-      }
+  SwitchSettingItem(
+      title = title,
+      description = detail,
+      icon = icon,
+      checked = checked,
+      onCheckedChange = onChange,
+  )
 }
 
 @Composable
 private fun InfoRow(icon: ImageVector, title: String, detail: String) {
-  Row(
-      Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 11.dp),
-      verticalAlignment = Alignment.CenterVertically) {
-        SettingIcon(icon)
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
-          Text(title)
-          Text(detail, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-      }
+  SettingItem(title = title, description = detail, icon = icon)
 }
 
 @Composable
 private fun SettingIcon(icon: ImageVector) {
-  Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-    Icon(icon, null, Modifier.padding(10.dp).size(21.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
-  }
+  SettingLeadingIcon(icon)
 }
 
 @Composable

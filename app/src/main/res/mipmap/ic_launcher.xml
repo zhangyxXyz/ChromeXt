@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <inset xmlns:android="http://schemas.android.com/apk/res/android"
 	android:drawable="@drawable/ic_chrome"
-	android:insetTop="3dp"
-	android:insetBottom="3dp"
-	android:insetLeft="3dp"
-	android:insetRight="3dp" />
+	android:insetTop="0dp"
+	android:insetBottom="0dp"
+	android:insetLeft="0dp"
+	android:insetRight="0dp" />

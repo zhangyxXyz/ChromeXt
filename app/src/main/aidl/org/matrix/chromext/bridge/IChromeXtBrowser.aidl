@@ -7,4 +7,5 @@ interface IChromeXtBrowser {
     void restoreSnapshot(in ParcelFileDescriptor source, in ParcelFileDescriptor resultDestination);
     void writeResponse(String action, String payload, in ParcelFileDescriptor destination);
     void writeStreamResponse(String action, in ParcelFileDescriptor payloadSource, in ParcelFileDescriptor destination);
+    void settingsChanged();
 }

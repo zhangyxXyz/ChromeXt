@@ -69,6 +69,12 @@ class BrowserBridgeService : Service() {
       notifyListeners()
     }
 
+    fun notifySettingsChanged() {
+      connections.values.forEach { connection ->
+        runCatching { connection.browser.settingsChanged() }
+      }
+    }
+
     suspend fun exportSnapshot(packageName: String, target: File): File =
         withContext(Dispatchers.IO) {
           val browser = connections[packageName]?.browser ?: error("目标浏览器尚未连接")

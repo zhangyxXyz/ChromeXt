@@ -1,9 +1,11 @@
 package org.matrix.chromext.ui
 
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.PackageInfo
+import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.LocaleList
@@ -35,6 +37,7 @@ class ChromeXtController(private val activity: ScriptManagerActivity) {
   private var remotePrefListener: SharedPreferences.OnSharedPreferenceChangeListener? = null
   private var localServerOverride by mutableStateOf<Boolean?>(null)
   private var runtimeLauncherOverride by mutableStateOf<Boolean?>(null)
+  private var desktopIconVisibleState by mutableStateOf(readDesktopIconVisible())
   private val serviceListener = XposedServiceRepository.Listener { bindRemoteSettings() }
   private val bridgeListener: () -> Unit = { refresh() }
   private val lastHandshakeAt = mutableMapOf<String, Long>()
@@ -83,6 +86,7 @@ class ChromeXtController(private val activity: ScriptManagerActivity) {
   }
 
   fun refresh() {
+    desktopIconVisibleState = readDesktopIconVisible()
     browserTargets = scopedSupportedBrowsers()
     val now = System.currentTimeMillis()
     browserTargets
@@ -183,6 +187,38 @@ class ChromeXtController(private val activity: ScriptManagerActivity) {
     mirrorAppearance { putBoolean("ui_liquid_glass", value) }
   }
 
+  fun desktopIconVisible(): Boolean = desktopIconVisibleState
+
+  private fun readDesktopIconVisible(): Boolean =
+      when (activity.packageManager.getComponentEnabledSetting(launcherComponent())) {
+        PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+        PackageManager.COMPONENT_ENABLED_STATE_DISABLED_USER,
+        PackageManager.COMPONENT_ENABLED_STATE_DISABLED_UNTIL_USED -> false
+        else -> true
+      }
+
+  fun setDesktopIconVisible(value: Boolean) {
+    runCatching {
+          activity.packageManager.setComponentEnabledSetting(
+              launcherComponent(),
+              if (value) PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+              else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
+              PackageManager.DONT_KILL_APP,
+          )
+          desktopIconVisibleState = value
+          revision++
+        }
+        .onFailure {
+          Log.toast(
+              activity,
+              if (isChinese) "桌面图标设置失败" else "Could not update the launcher icon",
+          )
+        }
+  }
+
+  private fun launcherComponent(): ComponentName =
+      ComponentName(activity.packageName, "${activity.packageName}.LauncherAlias")
+
   fun setResolvedThemeDark(value: Boolean) {
     val target = remotePref ?: return
     if (target.getBoolean(KEY_RESOLVED_THEME_DARK, !value) == value) return
@@ -190,7 +226,10 @@ class ChromeXtController(private val activity: ScriptManagerActivity) {
   }
 
   private fun mirrorAppearance(block: SharedPreferences.Editor.() -> Unit) {
-    remotePref?.edit()?.apply(block)?.apply()
+    val target = remotePref ?: return
+    if (target.edit().apply(block).commit()) {
+      BrowserBridgeService.Registry.notifySettingsChanged()
+    }
   }
 
   private fun syncAppearance() {
@@ -256,7 +295,8 @@ class ChromeXtController(private val activity: ScriptManagerActivity) {
       return false
     }
     return runCatching {
-          target.edit().apply(block).apply()
+          check(target.edit().apply(block).commit()) { "Remote settings commit failed" }
+          BrowserBridgeService.Registry.notifySettingsChanged()
           revision++
           true
         }

@@ -1,6 +1,7 @@
 package org.matrix.chromext.ui
 
 import android.graphics.Color as AndroidColor
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -29,6 +30,9 @@ import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.ColorLens
 import androidx.compose.material.icons.rounded.Colorize
 import androidx.compose.material.icons.rounded.Contrast
+import androidx.compose.material.icons.rounded.DarkMode
+import androidx.compose.material.icons.rounded.LightMode
+import androidx.compose.material.icons.rounded.SettingsBrightness
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -152,31 +156,82 @@ fun AppearanceSettingsScreen(controller: ChromeXtController) {
   }
 
   if (modeDialog) {
+    val modes = ThemeMode.entries
+    val labels =
+        modes.map { mode ->
+          when (mode) {
+            ThemeMode.System -> ap(chinese, "跟随系统", "System")
+            ThemeMode.Light -> ap(chinese, "浅色", "Light")
+            ThemeMode.Dark -> ap(chinese, "深色", "Dark")
+          }
+        }
+    val descriptions =
+        listOf(
+            ap(chinese, "随系统自动切换浅色与深色", "Switch with the system appearance"),
+            ap(chinese, "始终使用明亮的界面配色", "Always use the light color scheme"),
+            ap(chinese, "始终使用低亮度深色配色", "Always use the dark color scheme"),
+        )
+    val icons =
+        listOf(
+            Icons.Rounded.SettingsBrightness, Icons.Rounded.LightMode, Icons.Rounded.DarkMode)
     AlertDialog(
         onDismissRequest = { modeDialog = false },
+        icon = { Icon(Icons.Rounded.Contrast, null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text(ap(chinese, "主题模式", "Theme mode")) },
+        dismissButton = {
+          TextButton(onClick = { modeDialog = false }) { Text(ap(chinese, "取消", "Cancel")) }
+        },
         text = {
-          Column {
-            ThemeMode.entries.forEach { mode ->
-              val label =
-                  when (mode) {
-                    ThemeMode.System -> ap(chinese, "跟随系统", "System")
-                    ThemeMode.Light -> ap(chinese, "浅色", "Light")
-                    ThemeMode.Dark -> ap(chinese, "深色", "Dark")
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            modes.forEachIndexed { index, mode ->
+              val selected = appearance.themeMode == mode
+              Surface(
+                  onClick = {
+                    controller.setThemeMode(mode)
+                    modeDialog = false
+                  },
+                  modifier = Modifier.fillMaxWidth(),
+                  shape = RoundedCornerShape(18.dp),
+                  color =
+                      if (selected) MaterialTheme.colorScheme.primaryContainer
+                      else MaterialTheme.colorScheme.surfaceContainer,
+                  border =
+                      BorderStroke(
+                          1.dp,
+                          if (selected) MaterialTheme.colorScheme.primary
+                          else MaterialTheme.colorScheme.outlineVariant),
+              ) {
+                Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                  Surface(
+                      shape = RoundedCornerShape(13.dp),
+                      color =
+                          if (selected) MaterialTheme.colorScheme.primary
+                          else MaterialTheme.colorScheme.surfaceContainerHighest,
+                  ) {
+                    Icon(
+                        icons[index],
+                        null,
+                        Modifier.padding(10.dp).size(22.dp),
+                        tint =
+                            if (selected) MaterialTheme.colorScheme.onPrimary
+                            else MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                   }
-              Row(
-                  Modifier.fillMaxWidth()
-                      .clickable {
-                        controller.setThemeMode(mode)
-                        modeDialog = false
-                      }
-                      .padding(vertical = 12.dp),
-                  verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, Modifier.weight(1f))
-                    if (appearance.themeMode == mode) {
-                      Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary)
-                    }
+                  Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                    Text(
+                        labels[index],
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.SemiBold)
+                    Text(
+                        descriptions[index],
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant)
                   }
+                  if (selected) {
+                    Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary)
+                  }
+                }
+              }
             }
           }
         },

@@ -486,18 +486,43 @@ function GM_xmlhttpRequest(details) {
   if (!details.url) {
     throw new Error("GM_xmlhttpRequest requires a URL.");
   } else if (GM_xmlhttpRequest.strict) {
-    const domain = new URL(details.url).hostname;
-    const connects = GM_info.script.connects;
-    let allowed = location.hostname == domain && connects.includes("self");
-    if (!allowed && connects.includes("*")) allowed = true;
+    const domain = new URL(details.url, location.href).hostname
+      .toLowerCase()
+      .replace(/\.$/, "");
+    const currentDomain = location.hostname.toLowerCase().replace(/\.$/, "");
+    const connects = Array.isArray(GM_info.script.connects)
+      ? GM_info.script.connects
+      : [];
+    const allowed = connects.some((entry) => {
+      let rule = String(entry || "").trim().toLowerCase();
+      if (rule == "*") return true;
+      if (rule == "self") return domain == currentDomain;
+
+      // @connect accepts both example.com and *.example.com. Match on a
+      // hostname boundary so evil-example.com cannot impersonate example.com.
+      rule = rule.replace(/^\*\./, "").replace(/\.$/, "");
+      return rule.length > 0 && (domain == rule || domain.endsWith("." + rule));
+    });
     if (!allowed) {
-      connects.forEach((it) => {
-        if (domain.endsWith(it)) allowed = true;
-      });
-    }
-    if (!allowed) {
-      console.error("Connection to", domain, "is not declared using @connect");
-      return;
+      const error = new TypeError(
+        `Connection to ${domain} is not declared using @connect`
+      );
+      console.error(error);
+      const denied = Promise.reject(error);
+      // Callback-style users still receive onerror without an unhandled
+      // rejection; Promise/fetch-style users get a normal rejected request.
+      if (typeof details.onerror == "function") {
+        denied.catch(() => {});
+        queueMicrotask(() =>
+          details.onerror({
+            error: error.message,
+            status: 0,
+            statusText: "Forbidden",
+          })
+        );
+      }
+      denied.abort = () => {};
+      return denied;
     }
   }
   const uuid = Math.random();

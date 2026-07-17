@@ -32,6 +32,10 @@ object BrowserBridgeClient {
 
   private val browser =
       object : IChromeXtBrowser.Stub() {
+        override fun settingsChanged() {
+          mainHandler.post { runCatching { Chrome.syncRuntimeLauncherSettings() }.onFailure(Log::ex) }
+        }
+
         override fun writeSnapshot(destination: ParcelFileDescriptor) {
           Chrome.IO.execute {
             runCatching {

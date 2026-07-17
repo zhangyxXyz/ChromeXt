@@ -1,6 +1,9 @@
 package org.matrix.chromext.ui
 
 import android.net.Uri
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.text.format.Formatter
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -8,6 +11,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -26,20 +31,28 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Backup
+import androidx.compose.material.icons.rounded.AllInclusive
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.CheckCircle
+import androidx.compose.material.icons.rounded.Cancel
 import androidx.compose.material.icons.rounded.ChevronRight
 import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material.icons.rounded.CloudDownload
+import androidx.compose.material.icons.rounded.CloudDone
 import androidx.compose.material.icons.rounded.CloudQueue
 import androidx.compose.material.icons.rounded.CloudUpload
 import androidx.compose.material.icons.rounded.CloudSync
+import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Folder
+import androidx.compose.material.icons.rounded.FolderOpen
 import androidx.compose.material.icons.rounded.FolderZip
 import androidx.compose.material.icons.rounded.Key
+import androidx.compose.material.icons.rounded.History
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.Restore
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.Storage
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -63,12 +76,17 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import org.matrix.chromext.UiLocalization
+import org.matrix.chromext.ui.common.BrowserTargetSelector
+import org.matrix.chromext.ui.common.NavigationSettingItem
+import org.matrix.chromext.ui.common.SettingGroup
+import org.matrix.chromext.ui.common.SwitchSettingItem
 import java.text.DateFormat
 import java.util.Date
 import kotlinx.coroutines.launch
@@ -88,13 +106,15 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
   val manager = remember { BackupManager(context) }
   val scope = rememberCoroutineScope()
   var settings by remember { mutableStateOf(manager.settings()) }
+  val allTargets = controller.browserTargets
   val connected = controller.connectedBrowserTargets()
   var targetPackage by remember { mutableStateOf<String?>(null) }
+  var pendingConnectionTarget by remember { mutableStateOf<String?>(null) }
+  var openBrowserTarget by remember { mutableStateOf<BrowserTarget?>(null) }
   var busy by remember { mutableStateOf(false) }
   var resultMessage by remember { mutableStateOf<String?>(null) }
   var showWebDavEditor by remember { mutableStateOf(false) }
   var showPasswordEditor by remember { mutableStateOf(false) }
-  var showTargetChooser by remember { mutableStateOf(false) }
   var showBackupModeDialog by remember { mutableStateOf(false) }
   var pendingBackupMode by remember { mutableStateOf<BackupMode?>(null) }
   var retentionTarget by remember { mutableStateOf<String?>(null) }
@@ -102,6 +122,12 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
   var remoteChoices by remember { mutableStateOf<List<RemoteBackup>?>(null) }
 
   LaunchedEffect(connected) {
+    pendingConnectionTarget
+        ?.takeIf { pending -> pending in connected.map(BrowserTarget::packageName) }
+        ?.let { connectedTarget ->
+          targetPackage = connectedTarget
+          pendingConnectionTarget = null
+        }
     if (targetPackage !in connected.map(BrowserTarget::packageName)) {
       targetPackage = connected.firstOrNull()?.packageName
     }
@@ -186,10 +212,25 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
 
   fun requestBackup(mode: BackupMode) {
     if (targetPackage == null) {
-      showTargetChooser = true
+      val target =
+          allTargets.find {
+            it.packageName ==
+                (openBrowserTarget?.packageName
+                    ?: pendingConnectionTarget
+                    ?: allTargets.firstOrNull()?.packageName)
+          }
+      if (target != null) {
+        openBrowserTarget = target
+      } else {
+        resultMessage =
+            bt(
+                chinese,
+                "没有找到已安装且处于作用域内的支持浏览器",
+                "No installed supported browser was found in scope")
+      }
     } else if (mode.includesLocal && settings.localTreeUri.isNullOrBlank()) {
       pendingBackupMode = mode
-      treePicker.launch(null)
+      treePicker.launch(BackupManager.defaultDocumentsUri())
     } else {
       performBackup(mode)
     }
@@ -197,146 +238,106 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
 
   LazyColumn(
       Modifier.fillMaxSize(),
-      contentPadding = PaddingValues(18.dp, 10.dp, 18.dp, 28.dp),
-      verticalArrangement = Arrangement.spacedBy(14.dp),
+      contentPadding = PaddingValues(16.dp),
+      verticalArrangement = Arrangement.spacedBy(12.dp),
   ) {
     item {
-      Card(
-          shape = RoundedCornerShape(28.dp),
-          colors =
-              CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-            Column(Modifier.fillMaxWidth().padding(22.dp)) {
-              Icon(Icons.Rounded.Backup, null, Modifier.size(36.dp))
-              Text(
-                  bt(chinese, "ChromeXt 完整备份", "Complete ChromeXt backup"),
-                  Modifier.padding(top = 14.dp),
-                  style = MaterialTheme.typography.titleLarge,
-                  fontWeight = FontWeight.Bold)
-              Text(
-                  bt(
-                      chinese,
-                      "包含脚本源码、脚本存储、规则、运行时设置和界面设置。",
-                      "Includes script sources, script storage, rules, runtime settings, and appearance."),
-                  Modifier.padding(top = 7.dp),
-                  color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = .78f))
+      BackupDashboardCard(
+          localReady = settings.localTreeUri != null,
+          cloudReady = settings.webDav.isConfigured,
+          targetReady = targetPackage != null,
+          targets = allTargets,
+          selectedPackage =
+              targetPackage
+                  ?: openBrowserTarget?.packageName
+                  ?: pendingConnectionTarget
+                  ?: allTargets.firstOrNull()?.packageName,
+          busy = busy,
+          chinese = chinese,
+          onSelectTarget = { target ->
+            if (target.packageName in connected.map(BrowserTarget::packageName)) {
+              targetPackage = target.packageName
+            } else {
+              openBrowserTarget = target
             }
-          }
+          },
+          onClick = { requestBackup(BackupMode.LOCAL_AND_REMOTE) },
+          onLongClick = { showBackupModeDialog = true },
+      )
     }
     item {
-      BackupGroup(bt(chinese, "目标浏览器", "Target browser")) {
-        BackupRow(
-            Icons.Rounded.Settings,
-            bt(chinese, "备份目标", "Backup target"),
-            connected.find { it.packageName == targetPackage }?.let {
-              "${it.label} · ${it.packageName}"
+      val location = manager.localStorageLocation()
+      val browserPath =
+          targetPackage?.let { "${location.displayPath}/$it" } ?: location.displayPath
+      BackupStoragePanel(
+          path =
+              if (location.configured) {
+                bt(
+                    chinese,
+                    "$browserPath · ${if (location.isDefault) "默认目录" else "自定义目录"}",
+                    "$browserPath · ${if (location.isDefault) "Default folder" else "Custom folder"}")
+              } else {
+                bt(
+                    chinese,
+                    "$browserPath · 默认建议（尚未授权）",
+                    "$browserPath · Recommended default (not granted)")
+              },
+          retention = retentionLabel(settings.localRetentionCount, chinese),
+          enabled = targetPackage != null,
+          chinese = chinese,
+          onChooseFolder = { treePicker.launch(BackupManager.defaultDocumentsUri()) },
+          onCopyFolder = {
+            (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                .setPrimaryClip(ClipData.newPlainText("backup folder", browserPath))
+            Toast.makeText(
+                    context,
+                    bt(chinese, "备份路径已复制", "Backup path copied"),
+                    Toast.LENGTH_SHORT)
+                .show()
+          },
+          onRestore = {
+            targetPackage?.let { target ->
+              runAction { localChoices = manager.localBackups(target) }
             }
-                ?: bt(chinese, "请先打开一个已 Hook 的浏览器", "Open a hooked browser first"),
-            enabled = connected.isNotEmpty(),
-        ) {
-          showTargetChooser = true
-        }
-      }
+          },
+          onRestoreOther = {
+            archivePicker.launch(
+                arrayOf("application/zip", "application/json", "text/json", "application/octet-stream"))
+          },
+          onRetention = { retentionTarget = "local" },
+      )
     }
     item {
-      BackupGroup(bt(chinese, "备份操作", "Backup actions")) {
-        BackupRow(
-            Icons.Rounded.Backup,
-            bt(chinese, "立即备份", "Back up now"),
-            bt(chinese, "点击备份到本地和云端，长按选择目标", "Tap for local + cloud; long-press to choose a destination"),
-            enabled = targetPackage != null,
-            onLongClick = { showBackupModeDialog = true },
-        ) {
-          requestBackup(BackupMode.LOCAL_AND_REMOTE)
-        }
-      }
-    }
-    item {
-      BackupGroup(bt(chinese, "本地备份", "Local backup")) {
-        BackupRow(
-            Icons.Rounded.Folder,
-            bt(chinese, "备份目录", "Backup folder"),
-            settings.localTreeUri?.let(::displayPath)
-                ?: bt(chinese, "尚未选择目录", "No folder selected"),
-        ) {
-          treePicker.launch(null)
-        }
-        BackupRow(
-            Icons.Rounded.Restore,
-            bt(chinese, "从本地备份恢复", "Restore local backup"),
-            bt(chinese, "选择目录中的 ChromeXt ZIP 备份", "Choose a ChromeXt ZIP backup from the folder"),
-            enabled = targetPackage != null,
-        ) {
-          runAction {
-            localChoices = manager.localBackups()
-          }
-        }
-        BackupRow(
-            Icons.Rounded.FolderZip,
-            bt(chinese, "选择其他备份恢复", "Restore another backup"),
-            bt(chinese, "支持完整 ZIP 与旧版脚本 JSON", "Supports complete ZIP and legacy script JSON"),
-            enabled = targetPackage != null,
-        ) {
-          archivePicker.launch(
-              arrayOf("application/zip", "application/json", "text/json", "application/octet-stream"))
-        }
-        BackupRow(
-            Icons.Rounded.FolderZip,
-            bt(chinese, "本地保留份数", "Local retention"),
-            retentionLabel(settings.localRetentionCount, chinese),
-        ) {
-          retentionTarget = "local"
-        }
-      }
-    }
-    item {
-      BackupGroup("WebDAV") {
-        BackupRow(
-            Icons.Rounded.Cloud,
-            bt(chinese, "WebDAV 配置", "WebDAV configuration"),
-            if (settings.webDav.isConfigured) {
-              "${settings.webDav.url} · ${settings.webDav.directory}"
-            } else {
-              bt(chinese, "请填写服务器、用户名和密码", "Enter server, username, and password")
-            },
-        ) {
-          showWebDavEditor = true
-        }
-        BackupRow(
-            Icons.Rounded.CheckCircle,
-            bt(chinese, "测试连接", "Test connection"),
-            if (settings.webDav.isConfigured) {
-              bt(chinese, "验证登录并创建远端目录", "Verify credentials and create the remote folder")
-            } else {
-              bt(chinese, "配置完整后可用", "Available after configuration is complete")
-            },
-            enabled = settings.webDav.isConfigured,
-        ) {
-          save(settings)
-          runAction(bt(chinese, "WebDAV 连接成功", "WebDAV connection succeeded")) {
-            manager.testWebDav()
-          }
-        }
-        BackupRow(
-            Icons.Rounded.CloudDownload,
-            bt(chinese, "从 WebDAV 恢复", "Restore from WebDAV"),
-            if (settings.webDav.isConfigured) {
-              bt(chinese, "列出云端备份并选择恢复", "List remote backups and choose one to restore")
-            } else {
-              bt(chinese, "配置完整后可用", "Available after configuration is complete")
-            },
-            enabled = settings.webDav.isConfigured && targetPackage != null,
-        ) {
-          save(settings)
-          runAction { remoteChoices = manager.remoteBackups() }
-        }
-        BackupRow(
-            Icons.Rounded.CloudQueue,
-            bt(chinese, "云端保留份数", "Remote retention"),
-            retentionLabel(settings.remoteRetentionCount, chinese),
-        ) {
-          retentionTarget = "remote"
-        }
-      }
+      BackupCloudPanel(
+          configured = settings.webDav.isConfigured,
+          targetReady = targetPackage != null,
+          preview =
+              if (settings.webDav.isConfigured) {
+                val directory =
+                    listOf(settings.webDav.directory.trim('/'), targetPackage.orEmpty())
+                        .filter(String::isNotBlank)
+                        .joinToString("/")
+                "${settings.webDav.url} · $directory"
+              } else {
+                bt(chinese, "请填写服务器、用户名和密码", "Enter server, username, and password")
+              },
+          retention = retentionLabel(settings.remoteRetentionCount, chinese),
+          chinese = chinese,
+          onConfigure = { showWebDavEditor = true },
+          onTest = {
+            save(settings)
+            runAction(bt(chinese, "WebDAV 连接成功", "WebDAV connection succeeded")) {
+              manager.testWebDav()
+            }
+          },
+          onRestore = {
+            save(settings)
+            targetPackage?.let { target ->
+              runAction { remoteChoices = manager.remoteBackups(target) }
+            }
+          },
+          onRetention = { retentionTarget = "remote" },
+      )
     }
     item {
       BackupGroup(bt(chinese, "安全", "Security")) {
@@ -396,6 +397,34 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
       showWebDavEditor = false
     }
   }
+  openBrowserTarget?.let { target ->
+    AlertDialog(
+        onDismissRequest = { openBrowserTarget = null },
+        icon = { Icon(Icons.Rounded.Code, null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text(bt(chinese, "浏览器尚未连接", "Browser not connected")) },
+        text = {
+          Text(
+              bt(
+                  chinese,
+                  "请先打开 ${target.label} 建立连接，连接成功后会自动选中。",
+                  "Open ${target.label} to connect. It will be selected automatically once connected."))
+        },
+        dismissButton = {
+          TextButton(onClick = { openBrowserTarget = null }) {
+            Text(bt(chinese, "取消", "Cancel"))
+          }
+        },
+        confirmButton = {
+          Button(
+              onClick = {
+                pendingConnectionTarget = target.packageName
+                openBrowserTarget = null
+                controller.openScriptManager(target)
+              }) {
+                Text(bt(chinese, "打开浏览器", "Open browser"))
+              }
+        })
+  }
   if (showPasswordEditor) {
     PasswordEditor(
         initial = settings.encryptionPassword,
@@ -406,43 +435,65 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
       showPasswordEditor = false
     }
   }
-  if (showTargetChooser) {
-    SimpleChoiceDialog(
-        bt(chinese, "目标浏览器", "Target browser"),
-        connected.map { target ->
-          "${target.label}\n${target.packageName} · ${bt(chinese, "已连接", "Connected")}"
-        },
-        connected.indexOfFirst { it.packageName == targetPackage }.coerceAtLeast(0),
-        { showTargetChooser = false },
-    ) {
-      targetPackage = connected[it].packageName
-      showTargetChooser = false
-    }
-  }
   if (showBackupModeDialog) {
     AlertDialog(
         onDismissRequest = { showBackupModeDialog = false },
+        icon = { Icon(Icons.Rounded.Backup, null, tint = MaterialTheme.colorScheme.primary) },
         title = { Text(bt(chinese, "选择备份目标", "Choose backup destination")) },
+        dismissButton = {
+          TextButton(onClick = { showBackupModeDialog = false }) {
+            Text(bt(chinese, "取消", "Cancel"))
+          }
+        },
         confirmButton = {},
         text = {
-          Column {
+          Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(
+                bt(chinese, "选择本次备份写入的位置", "Choose where to save this backup"),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
             listOf(
                     Triple(BackupMode.LOCAL_AND_REMOTE, Icons.Rounded.CloudSync, bt(chinese, "备份到本地 + 云端", "Back up to local + cloud")),
                     Triple(BackupMode.LOCAL, Icons.Rounded.Folder, bt(chinese, "仅备份到本地", "Back up locally only")),
                     Triple(BackupMode.REMOTE, Icons.Rounded.CloudUpload, bt(chinese, "仅备份到云端", "Back up to cloud only")),
                 )
                 .forEach { (mode, icon, label) ->
-                  Row(
-                      Modifier.fillMaxWidth()
-                          .clickable {
-                            showBackupModeDialog = false
-                            requestBackup(mode)
-                          }
-                          .padding(vertical = 14.dp),
-                      verticalAlignment = Alignment.CenterVertically,
+                  val summary =
+                      when (mode) {
+                        BackupMode.LOCAL_AND_REMOTE -> bt(chinese, "同时保留设备与 WebDAV 副本", "Keep local and WebDAV copies")
+                        BackupMode.LOCAL -> bt(chinese, "只写入已选择的本地目录", "Save only to the selected local folder")
+                        BackupMode.REMOTE -> bt(chinese, "只上传到已配置的 WebDAV", "Upload only to the configured WebDAV")
+                      }
+                  Surface(
+                      onClick = {
+                        showBackupModeDialog = false
+                        requestBackup(mode)
+                      },
+                      modifier = Modifier.fillMaxWidth(),
+                      shape = RoundedCornerShape(18.dp),
+                      color = MaterialTheme.colorScheme.surfaceContainer,
                   ) {
-                    Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
-                    Text(label, Modifier.padding(start = 16.dp))
+                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
+                      Surface(
+                          shape = RoundedCornerShape(13.dp),
+                          color = MaterialTheme.colorScheme.primaryContainer) {
+                            Icon(
+                                icon,
+                                null,
+                                Modifier.padding(10.dp).size(22.dp),
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                          }
+                      Column(Modifier.padding(start = 12.dp).weight(1f)) {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold)
+                        Text(
+                            summary,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                      }
+                    }
                   }
                 }
           }
@@ -450,17 +501,16 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
     )
   }
   retentionTarget?.let { target ->
-    val values = BackupManager.RETENTION_VALUES
     val current =
         if (target == "local") settings.localRetentionCount else settings.remoteRetentionCount
-    SimpleChoiceDialog(
-        if (target == "local") bt(chinese, "本地保留份数", "Local retention")
-        else bt(chinese, "云端保留份数", "Remote retention"),
-        values.map { retentionLabel(it, chinese) },
-        values.indexOf(current).coerceAtLeast(0),
-        { retentionTarget = null },
-    ) { index ->
-      val value = values[index]
+    RetentionChoiceDialog(
+        title =
+            if (target == "local") bt(chinese, "本地保留份数", "Local retention")
+            else bt(chinese, "云端保留份数", "Remote retention"),
+        selected = current,
+        chinese = chinese,
+        onDismiss = { retentionTarget = null },
+    ) { value ->
       save(
           if (target == "local") settings.copy(localRetentionCount = value)
           else settings.copy(remoteRetentionCount = value))
@@ -501,47 +551,409 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
   }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun BackupGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun BackupDashboardCard(
+    localReady: Boolean,
+    cloudReady: Boolean,
+    targetReady: Boolean,
+    targets: List<BrowserTarget>,
+    selectedPackage: String?,
+    busy: Boolean,
+    chinese: Boolean,
+    onSelectTarget: (BrowserTarget) -> Unit,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
   Card(
-      Modifier.fillMaxWidth(),
-      shape = RoundedCornerShape(24.dp),
-      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
-          Text(title, Modifier.padding(horizontal = 20.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-          content()
+      modifier =
+          Modifier.fillMaxWidth()
+              .combinedClickable(
+                  enabled = !busy, onClick = onClick, onLongClick = onLongClick),
+      shape = RoundedCornerShape(28.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+  ) {
+    Column(Modifier.padding(20.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(54.dp)
+                .clip(RoundedCornerShape(17.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+          if (busy) CircularProgressIndicator(Modifier.size(27.dp), strokeWidth = 2.5.dp)
+          else
+              Icon(
+                  Icons.Rounded.Backup,
+                  null,
+                  Modifier.size(29.dp),
+                  tint = MaterialTheme.colorScheme.onPrimaryContainer)
         }
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+          Text(
+              bt(chinese, "立即备份", "Back up now"),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold)
+          Text(
+              if (targetReady) {
+                bt(chinese, "点击备份到本地和云端，长按选择目标", "Tap for local + cloud; long-press for destination")
+              } else {
+                bt(chinese, "点击打开浏览器并建立连接", "Tap to open the browser and connect")
+              },
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+      }
+      BrowserTargetSelector(
+          targets = targets,
+          selectedPackage = selectedPackage,
+          modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+          onSelect = onSelectTarget)
+      Spacer(Modifier.height(18.dp))
+      Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        BackupReadyPill(
+            Modifier.weight(1f),
+            Icons.Rounded.Folder,
+            bt(chinese, "本地", "Local"),
+            localReady,
+            chinese)
+        BackupReadyPill(
+            Modifier.weight(1f), Icons.Rounded.Cloud, "WebDAV", cloudReady, chinese)
+      }
+    }
+  }
+}
+
+@Composable
+private fun BackupReadyPill(
+    modifier: Modifier,
+    icon: ImageVector,
+    label: String,
+    ready: Boolean,
+    chinese: Boolean,
+) {
+  Surface(
+      modifier = modifier,
+      shape = RoundedCornerShape(14.dp),
+      color = MaterialTheme.colorScheme.surfaceContainerHighest,
+  ) {
+    Row(
+        Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+          Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
+          Spacer(Modifier.width(8.dp))
+          Text(
+              label,
+              Modifier.weight(1f),
+              style = MaterialTheme.typography.labelLarge,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis)
+          Icon(
+              if (ready) Icons.Rounded.CheckCircle else Icons.Rounded.Cancel,
+              if (ready) bt(chinese, "已就绪", "Ready") else bt(chinese, "待设置", "Setup required"),
+              Modifier.size(20.dp),
+              tint = if (ready) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error)
+        }
+  }
+}
+
+@Composable
+private fun BackupStoragePanel(
+    path: String,
+    retention: String,
+    enabled: Boolean,
+    chinese: Boolean,
+    onChooseFolder: () -> Unit,
+    onCopyFolder: () -> Unit,
+    onRestore: () -> Unit,
+    onRestoreOther: () -> Unit,
+    onRetention: () -> Unit,
+) {
+  BackupPanel(bt(chinese, "本地备份", "Local backup"), Icons.Rounded.Storage) {
+    @OptIn(ExperimentalFoundationApi::class)
+    Row(
+        Modifier.fillMaxWidth()
+            .combinedClickable(onClick = onChooseFolder, onLongClick = onCopyFolder)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
+          Spacer(Modifier.width(12.dp))
+          Column(Modifier.weight(1f)) {
+            Text(
+                bt(chinese, "备份目录", "Backup folder"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium)
+            Text(
+                path,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis)
+          }
+        }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          BackupMiniAction(
+              Modifier.weight(1f),
+              Icons.Rounded.Restore,
+              bt(chinese, "从本地恢复", "Restore local"),
+              enabled,
+              onRestore)
+          BackupMiniAction(
+              Modifier.weight(1f),
+              Icons.Rounded.FolderZip,
+              bt(chinese, "选择其他备份", "Other backup"),
+              enabled,
+              onRestoreOther)
+        }
+    BackupRetentionFooter(
+        bt(chinese, "本地保留份数", "Local retention"), retention, onRetention)
+  }
+}
+
+@Composable
+private fun BackupCloudPanel(
+    configured: Boolean,
+    targetReady: Boolean,
+    preview: String,
+    retention: String,
+    chinese: Boolean,
+    onConfigure: () -> Unit,
+    onTest: () -> Unit,
+    onRestore: () -> Unit,
+    onRetention: () -> Unit,
+) {
+  BackupPanel("WebDAV", Icons.Rounded.CloudQueue) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onConfigure).padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Rounded.Cloud, null, tint = MaterialTheme.colorScheme.primary)
+          Spacer(Modifier.width(12.dp))
+          Column(Modifier.weight(1f)) {
+            Text(
+                bt(chinese, "WebDAV 配置", "WebDAV configuration"),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Medium)
+            Text(
+                preview,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis)
+          }
+        }
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+          BackupMiniAction(
+              Modifier.weight(1f),
+              Icons.Rounded.CloudDone,
+              bt(chinese, "测试连接", "Test connection"),
+              configured,
+              onTest)
+          BackupMiniAction(
+              Modifier.weight(1f),
+              Icons.Rounded.CloudDownload,
+              bt(chinese, "从云端恢复", "Restore WebDAV"),
+              configured && targetReady,
+              onRestore)
+        }
+    BackupRetentionFooter(
+        bt(chinese, "云端保留份数", "Remote retention"), retention, onRetention)
+  }
+}
+
+@Composable
+private fun BackupPanel(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+  Card(
+      shape = RoundedCornerShape(24.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+  ) {
+    Row(
+        Modifier.padding(start = 18.dp, top = 18.dp, end = 18.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+          Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
+          Spacer(Modifier.width(10.dp))
+          Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        }
+    content()
+  }
+}
+
+@Composable
+private fun BackupMiniAction(
+    modifier: Modifier,
+    icon: ImageVector,
+    title: String,
+    enabled: Boolean = true,
+    onClick: () -> Unit,
+) {
+  Surface(
+      modifier = modifier.clip(RoundedCornerShape(17.dp)).clickable(enabled = enabled, onClick = onClick),
+      shape = RoundedCornerShape(17.dp),
+      color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = if (enabled) 1f else .4f),
+  ) {
+    Column(Modifier.padding(14.dp), horizontalAlignment = Alignment.Start) {
+      Icon(
+          icon,
+          null,
+          Modifier.size(23.dp),
+          tint = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = if (enabled) 1f else .45f))
+      Spacer(Modifier.height(10.dp))
+      Text(
+          title,
+          style = MaterialTheme.typography.labelLarge,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis,
+          color = MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = if (enabled) 1f else .45f))
+    }
+  }
+}
+
+@Composable
+private fun BackupRetentionFooter(label: String, value: String, onClick: () -> Unit) {
+  Row(
+      Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 18.dp, vertical = 15.dp),
+      verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            Icons.Rounded.History,
+            null,
+            Modifier.size(19.dp),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.width(9.dp))
+        Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.weight(1f))
+        Surface(
+            shape = RoundedCornerShape(10.dp),
+            color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+              Text(
+                  value,
+                  Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                  style = MaterialTheme.typography.labelMedium,
+                  color = MaterialTheme.colorScheme.primary)
+            }
       }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun RetentionChoiceDialog(
+    title: String,
+    selected: Int,
+    chinese: Boolean,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+  AlertDialog(
+      onDismissRequest = onDismiss,
+      icon = { Icon(Icons.Rounded.History, null, tint = MaterialTheme.colorScheme.primary) },
+      title = { Text(title) },
+      dismissButton = {
+        TextButton(onClick = onDismiss) { Text(bt(chinese, "取消", "Cancel")) }
+      },
+      confirmButton = {},
+      text = {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+          Text(
+              bt(
+                  chinese,
+                  "成功备份后将自动清理超出数量的旧备份",
+                  "Older backups are removed automatically after a successful backup"),
+              style = MaterialTheme.typography.bodyMedium,
+              color = MaterialTheme.colorScheme.onSurfaceVariant)
+          Row(
+              Modifier.fillMaxWidth(),
+              horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BackupManager.RETENTION_VALUES.filter { it > 0 }.forEach { value ->
+                  val isSelected = value == selected
+                  Surface(
+                      onClick = { onSelect(value) },
+                      modifier = Modifier.weight(1f),
+                      shape = RoundedCornerShape(16.dp),
+                      color =
+                          if (isSelected) MaterialTheme.colorScheme.primaryContainer
+                          else MaterialTheme.colorScheme.surfaceContainer,
+                      border =
+                          BorderStroke(
+                              1.dp,
+                              if (isSelected) MaterialTheme.colorScheme.primary
+                              else MaterialTheme.colorScheme.outlineVariant)) {
+                        Column(
+                            Modifier.padding(vertical = 12.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                              Text(
+                                  value.toString(),
+                                  style = MaterialTheme.typography.titleLarge,
+                                  fontWeight = FontWeight.Bold,
+                                  color =
+                                      if (isSelected) MaterialTheme.colorScheme.primary
+                                      else MaterialTheme.colorScheme.onSurface)
+                              Text(
+                                  bt(chinese, "份", "backups"),
+                                  style = MaterialTheme.typography.labelSmall,
+                                  color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                      }
+                }
+              }
+          val unlimitedSelected = selected == 0
+          Surface(
+              onClick = { onSelect(0) },
+              modifier = Modifier.fillMaxWidth(),
+              shape = RoundedCornerShape(16.dp),
+              color =
+                  if (unlimitedSelected) MaterialTheme.colorScheme.primaryContainer
+                  else MaterialTheme.colorScheme.surfaceContainer,
+              border =
+                  BorderStroke(
+                      1.dp,
+                      if (unlimitedSelected) MaterialTheme.colorScheme.primary
+                      else MaterialTheme.colorScheme.outlineVariant)) {
+                Row(
+                    Modifier.padding(horizontal = 16.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                      Icon(
+                          Icons.Rounded.AllInclusive,
+                          null,
+                          tint = MaterialTheme.colorScheme.primary)
+                      Text(
+                          bt(chinese, "全部保留", "Keep all"),
+                          Modifier.padding(start = 12.dp).weight(1f),
+                          style = MaterialTheme.typography.titleSmall)
+                      if (unlimitedSelected) {
+                        Icon(Icons.Rounded.Check, null, tint = MaterialTheme.colorScheme.primary)
+                      }
+                    }
+              }
+        }
+      })
+}
+
+@Composable
+private fun BackupGroup(title: String, content: @Composable ColumnScope.() -> Unit) {
+  SettingGroup(title, content = content)
+}
+
 @Composable
 private fun BackupRow(
     icon: ImageVector,
     title: String,
     detail: String,
     enabled: Boolean = true,
+    helpMarkdown: String? = null,
     onLongClick: (() -> Unit)? = null,
     onClick: () -> Unit,
 ) {
-  val alpha = if (enabled) 1f else .45f
-  val interaction =
-      if (onLongClick == null) {
-        Modifier.clickable(enabled = enabled, onClick = onClick)
-      } else {
-        Modifier.combinedClickable(
-            enabled = enabled, onClick = onClick, onLongClick = onLongClick)
-      }
-  Row(
-      Modifier.fillMaxWidth().then(interaction).padding(horizontal = 16.dp, vertical = 11.dp),
-      verticalAlignment = Alignment.CenterVertically) {
-        BackupIcon(icon, alpha)
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
-          Text(title, color = MaterialTheme.colorScheme.onSurface.copy(alpha = alpha))
-          Text(detail, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha), maxLines = 2, overflow = TextOverflow.Ellipsis)
-        }
-        Icon(Icons.Rounded.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = alpha))
-      }
+  NavigationSettingItem(
+      title = title,
+      description = detail,
+      icon = icon,
+      enabled = enabled,
+      helpMarkdown = helpMarkdown,
+      onLongClick = onLongClick,
+      onClick = onClick,
+  )
 }
 
 @Composable
@@ -552,23 +964,13 @@ private fun BackupSwitchRow(
     checked: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
-  Row(
-      Modifier.fillMaxWidth().clickable { onChange(!checked) }.padding(horizontal = 16.dp, vertical = 10.dp),
-      verticalAlignment = Alignment.CenterVertically) {
-        BackupIcon(icon)
-        Column(Modifier.padding(start = 14.dp).weight(1f)) {
-          Text(title)
-          Text(detail, Modifier.padding(top = 3.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-        Switch(checked, onChange)
-      }
-}
-
-@Composable
-private fun BackupIcon(icon: ImageVector, alpha: Float = 1f) {
-  Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = alpha)) {
-    Icon(icon, null, Modifier.padding(10.dp).size(21.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = alpha))
-  }
+  SwitchSettingItem(
+      title = title,
+      description = detail,
+      icon = icon,
+      checked = checked,
+      onCheckedChange = onChange,
+  )
 }
 
 @Composable
@@ -690,9 +1092,6 @@ private fun BackupChoiceDialog(
       confirmButton = {},
       dismissButton = { TextButton(onClick = onDismiss) { Text(bt(chinese, "关闭", "Close")) } })
 }
-
-private fun displayPath(uri: String): String =
-    runCatching { Uri.parse(uri).lastPathSegment?.replace(':', '/') ?: uri }.getOrDefault(uri)
 
 private fun retentionLabel(value: Int, chinese: Boolean): String =
     if (value == 0) bt(chinese, "全部保留", "Keep all")

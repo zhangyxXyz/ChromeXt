@@ -4,9 +4,9 @@
 	<foreground>
 		<inset
 			android:drawable="@drawable/ic_chrome"
-			android:insetTop="18dp"
-			android:insetBottom="18dp"
-			android:insetLeft="18dp"
-			android:insetRight="18dp"/>
+			android:insetTop="10dp"
+			android:insetBottom="10dp"
+			android:insetLeft="10dp"
+			android:insetRight="10dp"/>
 	</foreground>
 </adaptive-icon>

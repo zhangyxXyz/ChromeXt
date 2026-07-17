@@ -7,10 +7,12 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -24,6 +26,8 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +47,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.mikepenz.markdown.m3.Markdown
 import org.matrix.chromext.UiLocalization
+import org.matrix.chromext.ui.common.NavigationSettingItem
+import org.matrix.chromext.ui.common.SettingGroup
+import org.matrix.chromext.ui.common.SettingItem
 import java.io.File
 import kotlinx.coroutines.launch
 import org.matrix.chromext.BuildConfig
@@ -52,7 +59,7 @@ import org.matrix.chromext.update.isNewerVersion
 import org.matrix.chromext.update.isSameVersion
 
 @Composable
-fun UpdateSection(controller: ChromeXtController) {
+fun UpdateSection(controller: ChromeXtController, onOpenReleaseHistory: () -> Unit) {
   val context = controller.context
   val chinese = controller.isChinese
   val client = remember { UpdateClient() }
@@ -87,49 +94,61 @@ fun UpdateSection(controller: ChromeXtController) {
     }
   }
 
-  Card(
-      Modifier.fillMaxWidth(),
-      shape = RoundedCornerShape(24.dp),
-      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
-        Column(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
-          Text(
-              ut(chinese, "更新", "Updates"),
-              Modifier.padding(horizontal = 20.dp, vertical = 10.dp),
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.Bold)
-          Row(
-              Modifier.fillMaxWidth().clickable(enabled = !checking, onClick = ::checkUpdate).padding(horizontal = 16.dp, vertical = 11.dp),
-              verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                  Icon(Icons.Rounded.SystemUpdate, null, Modifier.padding(10.dp).size(21.dp))
-                }
-                Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                  Text(ut(chinese, "检查更新", "Check for updates"))
-                  Text(
-                      if (checking) ut(chinese, "正在检查 GitHub…", "Checking GitHub…")
-                      else ut(chinese, "当前版本 ${BuildConfig.VERSION_NAME}", "Current version ${BuildConfig.VERSION_NAME}"),
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+  Column {
+    Text(
+        ut(chinese, "更新", "Updates"),
+        Modifier.padding(start = 4.dp, bottom = 10.dp),
+        style = MaterialTheme.typography.titleMedium,
+        fontWeight = FontWeight.SemiBold,
+        color = MaterialTheme.colorScheme.primary)
+    Card(
+        shape = RoundedCornerShape(22.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)) {
+          Row(Modifier.fillMaxWidth().padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
+              Box(Modifier.size(46.dp), contentAlignment = Alignment.Center) {
                 if (checking) CircularProgressIndicator(Modifier.size(21.dp), strokeWidth = 2.dp)
-                else Icon(Icons.Rounded.ChevronRight, null)
+                else
+                    Icon(
+                        Icons.Rounded.SystemUpdate,
+                        null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer)
               }
+            }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+              Text(
+                  ut(chinese, "检查更新", "Check for updates"),
+                  style = MaterialTheme.typography.titleMedium,
+                  fontWeight = FontWeight.SemiBold)
+              Text(
+                  if (checking) ut(chinese, "正在检查 GitHub…", "Checking GitHub…")
+                  else ut(chinese, "当前版本 ${BuildConfig.VERSION_NAME}", "Current version ${BuildConfig.VERSION_NAME}"),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+          }
+          HorizontalDivider(
+              Modifier.padding(horizontal = 18.dp), color = MaterialTheme.colorScheme.outlineVariant)
           Row(
-              Modifier.fillMaxWidth().clickable {
-                context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("${UpdateClient.PROJECT_URL}/releases")))
-              }.padding(horizontal = 16.dp, vertical = 11.dp),
-              verticalAlignment = Alignment.CenterVertically) {
-                Surface(shape = RoundedCornerShape(13.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                  Icon(Icons.Rounded.History, null, Modifier.padding(10.dp).size(21.dp))
+              Modifier.fillMaxWidth().padding(12.dp),
+              horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp)) {
+                FilledTonalButton(
+                    onClick = ::checkUpdate,
+                    enabled = !checking,
+                    modifier = Modifier.weight(1f)) {
+                      Icon(Icons.Rounded.SystemUpdate, null, Modifier.size(18.dp))
+                      Spacer(Modifier.width(7.dp))
+                      Text(ut(chinese, "检查更新", "Check"))
+                    }
+                TextButton(onClick = onOpenReleaseHistory, modifier = Modifier.weight(1f)) {
+                  Icon(Icons.Rounded.History, null, Modifier.size(18.dp))
+                  Spacer(Modifier.width(7.dp))
+                  Text(ut(chinese, "发布历史", "History"))
                 }
-                Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                  Text(ut(chinese, "发布历史", "Release history"))
-                  Text("GitHub Releases", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Icon(Icons.Rounded.ChevronRight, null)
               }
         }
-      }
+  }
 
   release?.let { found ->
     val newer = isNewerVersion(found.tag, BuildConfig.VERSION_NAME)

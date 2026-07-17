@@ -38,8 +38,28 @@ function resolveLanguage(value = "system") {
 
 function setLanguage(value = "system") {
   languageSetting = value;
+  globalThis.__ChromeXtLanguage = value;
   activeLanguage = resolveLanguage(value);
   document.documentElement.lang = activeLanguage === "zh-TW" ? "zh-TW" : activeLanguage === "zh" ? "zh-CN" : "en";
+}
+
+function refreshLocalizedEditor() {
+  const dialog = document.querySelector("dialog#confirm");
+  const scriptMeta = document.querySelector("#meta");
+  if (!dialog || !scriptMeta || !dialog.querySelector(".cx-script-name")) return;
+  const oldConfirm = dialog.querySelector("button.primary");
+  const installing = oldConfirm?.disabled === true;
+  dialog.replaceChildren(createInstallContent(scriptMeta.textContent || ""));
+  if (globalThis.__chromextCurrentInstall) {
+    showInstallStatus(globalThis.__chromextCurrentInstall);
+  }
+  if (installing) {
+    const confirm = dialog.querySelector("button.primary");
+    if (confirm) {
+      confirm.disabled = true;
+      confirm.textContent = globalThis.__chromextCurrentInstall?.installed ? t("reinstalling") : t("installing");
+    }
+  }
 }
 
 function t(key, values = {}) {
@@ -53,6 +73,7 @@ function requestSettings() {
     const applySettings = (detail = {}) => {
       setLanguage(detail.language || "system");
       if (detail.appearance) applyAppearance(detail.appearance);
+      refreshLocalizedEditor();
     };
     const finish = (detail = {}) => {
       applySettings(detail);

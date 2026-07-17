@@ -29,7 +29,12 @@ data class WebDavConfig(
     get() = url.isNotBlank() && username.isNotBlank() && password.isNotBlank()
 }
 
-data class RemoteBackup(val name: String, val modifiedAt: Long, val size: Long)
+data class RemoteBackup(
+    val name: String,
+    val modifiedAt: Long,
+    val size: Long,
+    internal val directory: String = "",
+)
 
 class WebDavClient(
     private val config: WebDavConfig,
@@ -97,6 +102,7 @@ class WebDavClient(
                     .getOrNull()
               } ?: 0L,
               response.text("getcontentlength")?.toLongOrNull() ?: 0L,
+              config.directory,
           )
         }
         .sortedByDescending(RemoteBackup::modifiedAt)

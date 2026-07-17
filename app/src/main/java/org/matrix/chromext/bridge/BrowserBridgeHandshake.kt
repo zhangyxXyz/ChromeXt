@@ -13,7 +13,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import org.matrix.chromext.ScriptTransferActivity
 import org.matrix.chromext.ScriptTransferContract
 import org.matrix.chromext.UiLocalization
 import org.matrix.chromext.backup.ScriptTransferManager
@@ -81,42 +80,47 @@ object BrowserBridgeHandshake {
             action == ScriptTransferContract.ACTION_IMPORT ||
                 action == ScriptTransferContract.ACTION_EXPORT) { "无效的脚本数据操作" }
         val manager = ScriptTransferManager(context)
-        if (!manager.hasDirectory()) {
-          context.startActivity(
-              Intent(context, ScriptTransferActivity::class.java)
-                  .putExtra(ScriptTransferContract.EXTRA_ACTION, action)
-                  .putExtra(ScriptTransferContract.EXTRA_BROWSER_PACKAGE, packageName)
-                  .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-          return@launch
-        }
+        val location = manager.storageLocation()
         val result =
-            if (action == ScriptTransferContract.ACTION_EXPORT) {
+            if (action == ScriptTransferContract.ACTION_IMPORT) {
+              JSONObject(
+                  mapOf(
+                      "status" to "browser_picker",
+                      "action" to action,
+                      "message" to
+                          UiLocalization.text(
+                              chinese,
+                              "请在当前网页选择要导入的脚本文件",
+                              "Choose the script file from the current page",
+                          )))
+            } else if (location.configured) {
               val file = manager.export(packageName)
               JSONObject(
                   mapOf(
                       "status" to "success",
                       "action" to action,
                       "count" to file.scriptCount,
+                      "path" to "${location.displayPath}/${file.relativePath}",
+                      "directory" to location.displayPath,
+                      "defaultPath" to location.isDefault,
                       "message" to
                           UiLocalization.text(
                               chinese,
-                              "已导出到 ${file.name}",
-                              "Exported to ${file.name}",
+                              "已导出到 ${location.displayPath}/${file.name}",
+                              "Exported to ${location.displayPath}/${file.name}",
                           )))
             } else {
-              val latest = manager.files().firstOrNull() ?: error("目录中没有脚本导出文件")
-              val imported = manager.import(packageName, latest)
               JSONObject(
                   mapOf(
-                      "status" to "success",
+                      "status" to "browser_picker",
                       "action" to action,
-                      "imported" to imported.imported,
-                      "failed" to imported.failed,
+                      "directory" to location.displayPath,
+                      "defaultPath" to location.isDefault,
                       "message" to
                           UiLocalization.text(
                               chinese,
-                              "已导入 ${imported.imported} 个脚本 ${imported.failed} 个失败",
-                              "Imported ${imported.imported} scripts; ${imported.failed} failed",
+                              "尚未设置保存目录，请在浏览器中选择保存位置",
+                              "No save folder is configured; choose a location in the browser",
                           )))
             }
         BrowserBridgeService.Registry.request(packageName, "setTransferStatus", result.toString())

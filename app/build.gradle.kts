@@ -40,8 +40,8 @@ android {
     applicationId = "org.matrix.chromext"
     minSdk = 26
     targetSdk = 37
-    versionCode = 19
-    versionName = System.getenv("VERSION_NAME") ?: "3.8.10"
+    versionCode = 20
+    versionName = System.getenv("VERSION_NAME") ?: "3.8.11"
   }
 
   buildFeatures {

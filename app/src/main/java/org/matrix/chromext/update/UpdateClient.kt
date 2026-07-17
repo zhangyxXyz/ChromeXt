@@ -23,6 +23,7 @@ data class AppRelease(
     val pageUrl: String,
     val publishedAt: String,
     val apk: ReleaseAsset?,
+    val prerelease: Boolean = false,
 )
 
 class UpdateClient(
@@ -41,36 +42,90 @@ class UpdateClient(
           http.newCall(request).execute().use { response ->
             if (response.code == 404) return@use null
             if (!response.isSuccessful) error("GitHub HTTP ${response.code} ${response.message}")
-            val json = JSONObject(response.body?.string().orEmpty())
-            val assets = json.optJSONArray("assets")
-            var chosen: ReleaseAsset? = null
-            if (assets != null) {
-              for (index in 0 until assets.length()) {
-                val asset = assets.getJSONObject(index)
-                val name = asset.optString("name")
-                if (name.endsWith(".apk", ignoreCase = true) &&
-                    name.contains("ChromeXt", ignoreCase = true) &&
-                    !name.contains("debug", ignoreCase = true)) {
-                  chosen =
-                      ReleaseAsset(
-                          name,
-                          asset.optString("browser_download_url"),
-                          asset.optLong("size"))
-                  break
-                }
-              }
-            }
-            AppRelease(
-                json.optString("tag_name"),
-                json.optString("name").ifBlank { json.optString("tag_name") },
-                json.optString("body"),
-                json.optString("html_url"),
-                json.optString("published_at"),
-                chosen,
-            )
+            parseRelease(JSONObject(response.body?.string().orEmpty()))
           }
         }
       }
+
+  suspend fun releases(): Result<List<AppRelease>> =
+      withContext(Dispatchers.IO) {
+        cancellableResult {
+          val request =
+              Request.Builder()
+                  .url("https://api.github.com/repos/$repository/releases?per_page=30")
+                  .header("Accept", "application/vnd.github+json")
+                  .header("X-GitHub-Api-Version", "2022-11-28")
+                  .build()
+          http.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) error("GitHub HTTP ${response.code} ${response.message}")
+            val json = org.json.JSONArray(response.body?.string().orEmpty())
+            (0 until json.length()).map { parseRelease(json.getJSONObject(it)) }
+          }
+        }
+      }
+
+  suspend fun readme(languageTag: String): Result<String> =
+      withContext(Dispatchers.IO) {
+        cancellableResult {
+          val normalized = languageTag.trim().replace('_', '-').trim('-')
+          val language = normalized.substringBefore('-').lowercase()
+          val candidates =
+              buildList {
+                    if (normalized.isNotBlank() && language != "en") add("README.$normalized.md")
+                    if (language.isNotBlank() && language != "en" && !normalized.equals(language, true)) {
+                      add("README.$language.md")
+                    }
+                    add("README.md")
+                  }
+                  .distinct()
+          for (fileName in candidates) {
+            val request =
+                Request.Builder()
+                    .url("https://api.github.com/repos/$repository/contents/$fileName")
+                    .header("Accept", "application/vnd.github.raw+json")
+                    .header("X-GitHub-Api-Version", "2022-11-28")
+                    .build()
+            http.newCall(request).execute().use { response ->
+              if (response.isSuccessful) return@cancellableResult response.body?.string().orEmpty()
+              if (response.code != 404) {
+                error("GitHub HTTP ${response.code} ${response.message}")
+              }
+            }
+          }
+          error("README not found")
+        }
+      }
+
+  private fun parseRelease(json: JSONObject): AppRelease {
+    val assets = json.optJSONArray("assets")
+    var chosen: ReleaseAsset? = null
+    if (assets != null) {
+      for (index in 0 until assets.length()) {
+        val asset = assets.getJSONObject(index)
+        val name = asset.optString("name")
+        if (name.endsWith(".apk", ignoreCase = true) &&
+            name.contains("ChromeXt", ignoreCase = true) &&
+            !name.contains("debug", ignoreCase = true)) {
+          chosen =
+              ReleaseAsset(
+                  name,
+                  asset.optString("browser_download_url"),
+                  asset.optLong("size"),
+              )
+          break
+        }
+      }
+    }
+    return AppRelease(
+        json.optString("tag_name"),
+        json.optString("name").ifBlank { json.optString("tag_name") },
+        json.optString("body"),
+        json.optString("html_url"),
+        json.optString("published_at"),
+        chosen,
+        json.optBoolean("prerelease"),
+    )
+  }
 
   suspend fun download(
       asset: ReleaseAsset,

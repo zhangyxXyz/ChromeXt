@@ -2,6 +2,7 @@ package org.matrix.chromext
 
 import android.content.Context
 import android.content.SharedPreferences
+import android.content.res.Configuration
 import android.os.Build
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
@@ -12,13 +13,11 @@ import org.json.JSONObject
 
 object BrowserAppearance {
   fun payload(context: Context, settings: SharedPreferences): JSONObject {
-    val themeMode = settings.getString("ui_theme_mode", "System") ?: "System"
+    // Web surfaces run inside the target browser. Their brightness must follow that browser's
+    // configuration instead of ChromeXt's own theme preference mirrored through remote settings.
     val dark =
-        when (themeMode) {
-          "Dark" -> true
-          "Light" -> false
-          else -> settings.getBoolean("ui_theme_dark", false)
-        }
+        context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+            Configuration.UI_MODE_NIGHT_YES
     val dynamic = settings.getBoolean("ui_dynamic_color", true)
     val systemDynamicScheme =
         if (dynamic && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -36,7 +35,7 @@ object BrowserAppearance {
             ?: dynamicColorScheme(seedColor = seedColor, isDark = dark, isAmoled = false)
     val seed = scheme.primary.toHex()
     return JSONObject().apply {
-        put("themeMode", themeMode)
+        put("themeMode", "System")
         put("dark", dark)
         put("dynamicColor", dynamic)
         put("seed", seed)

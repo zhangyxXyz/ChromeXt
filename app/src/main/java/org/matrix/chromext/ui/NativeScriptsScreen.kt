@@ -1,14 +1,23 @@
 package org.matrix.chromext.ui
 
 import android.content.Context
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.net.Uri
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.AttributeSet
 import android.view.Gravity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,12 +32,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -42,6 +53,8 @@ import androidx.compose.material.icons.rounded.Code
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.ErrorOutline
+import androidx.compose.material.icons.rounded.FileDownload
+import androidx.compose.material.icons.rounded.FileUpload
 import androidx.compose.material.icons.rounded.FormatListNumbered
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Info
@@ -67,6 +80,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -75,6 +89,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
@@ -92,6 +107,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.appcompat.widget.AppCompatEditText
 import org.matrix.chromext.UiLocalization
+import org.matrix.chromext.ui.common.BrowserTargetSelector
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -99,6 +115,7 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.bridge.BrowserBridgeService
+import org.matrix.chromext.backup.ScriptTransferManager
 import org.matrix.chromext.utils.Log
 
 private data class NativeScript(
@@ -128,6 +145,7 @@ internal data class ScriptMetadataDraft(
     get() = normalizedRuleLines(excludes)
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun NativeScriptsScreen(controller: ChromeXtController) {
   controller.revision
@@ -159,6 +177,8 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
   var oversizedSource by remember { mutableStateOf<Pair<String, Int>?>(null) }
   var editorHighlight by remember { mutableStateOf(false) }
   var editorLineNumbers by remember { mutableStateOf(true) }
+  var transferTargetPackage by remember { mutableStateOf<String?>(null) }
+  val transferManager = remember { ScriptTransferManager(controller.context.applicationContext) }
 
   suspend fun request(action: String, payload: JSONObject = JSONObject()): JSONObject {
     val target = targetPackage ?: throw IllegalStateException("No connected browser")
@@ -325,6 +345,74 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
     }
   }
 
+  val importPicker =
+      rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
+        val target = transferTargetPackage
+        transferTargetPackage = null
+        if (uri != null && target != null) {
+          runAction {
+            val result = transferManager.import(target, uri)
+            loadScripts()
+            Log.toast(
+                controller.context,
+                ns(
+                    chinese,
+                    "已导入 ${result.imported} 个脚本，${result.failed} 个失败",
+                    "Imported ${result.imported} scripts; ${result.failed} failed",
+                ),
+            )
+          }
+        }
+      }
+  val exportPicker =
+      rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/json")) {
+          uri: Uri? ->
+        val target = transferTargetPackage
+        transferTargetPackage = null
+        if (uri != null && target != null) {
+          runAction {
+            val file = transferManager.export(target, uri)
+            Log.toast(
+                controller.context,
+                ns(
+                    chinese,
+                    "已导出 ${file.scriptCount} 个脚本到 ${file.name}",
+                    "Exported ${file.scriptCount} scripts to ${file.name}",
+                ),
+            )
+          }
+        }
+      }
+
+  fun requestImport() {
+    val target = targetPackage ?: return
+    transferTargetPackage = target
+    importPicker.launch(
+        arrayOf("application/json", "text/javascript", "application/javascript", "text/plain"))
+  }
+
+  fun requestExport() {
+    val target = targetPackage ?: return
+    val location = transferManager.storageLocation()
+    if (!location.configured) {
+      transferTargetPackage = target
+      exportPicker.launch(transferManager.newExportName())
+      return
+    }
+    runAction {
+      val file = transferManager.export(target)
+      val path = "${location.displayPath}/${file.relativePath}"
+      Log.toast(
+          controller.context,
+          ns(
+              chinese,
+              "已导出 ${file.scriptCount} 个脚本到 $path（${if (location.isDefault) "默认目录" else "自定义目录"}）",
+              "Exported ${file.scriptCount} scripts to $path (${if (location.isDefault) "default folder" else "custom folder"})",
+          ),
+      )
+    }
+  }
+
   LaunchedEffect(targets) {
     pendingConnectionTarget
         ?.takeIf { pending -> pending in targets.map(BrowserTarget::packageName) }
@@ -458,38 +546,54 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
       item {
-        Card(
-            onClick = { showTargetPicker = true },
-            enabled = allTargets.isNotEmpty(),
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
-              Column(Modifier.fillMaxWidth().padding(20.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                  Icon(Icons.Rounded.Code, null, Modifier.size(32.dp))
-                  Column(Modifier.padding(start = 14.dp).weight(1f)) {
-                    Text(
-                        ns(chinese, "原生脚本管理", "Native script manager"),
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold)
-                    Text(
-                        targets.find { it.packageName == targetPackage }?.label
-                            ?: ns(chinese, "等待浏览器连接", "Waiting for browser"),
-                        style = MaterialTheme.typography.bodySmall)
-                  }
-                  if (allTargets.isNotEmpty()) {
-                    Icon(Icons.Rounded.ArrowDropDown, ns(chinese, "切换浏览器", "Switch browser"))
-                  }
-                  if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                  else IconButton(onClick = { runAction { loadScripts() } }) {
-                    Icon(Icons.Rounded.Refresh, ns(chinese, "刷新", "Refresh"))
-                  }
+        Column(Modifier.fillMaxWidth()) {
+          Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Rounded.Code, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+            Column(Modifier.padding(start = 14.dp).weight(1f)) {
+              Text(
+                  ns(chinese, "原生脚本管理", "Native script manager"),
+                  style = MaterialTheme.typography.titleLarge,
+                  fontWeight = FontWeight.Bold)
+              Text(
+                  targets.find { it.packageName == targetPackage }?.label
+                      ?: ns(chinese, "等待浏览器连接", "Waiting for browser"),
+                  style = MaterialTheme.typography.bodySmall,
+                  color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(
+                onClick = {
+                  controller.openScriptManager(allTargets.find { it.packageName == targetPackage })
+                },
+                enabled = targetPackage != null,
+            ) {
+              Icon(
+                  Icons.AutoMirrored.Rounded.OpenInNew,
+                  ns(chinese, "打开浏览器管理页", "Open browser manager"))
+            }
+            if (busy) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+            else
+                IconButton(onClick = { runAction { loadScripts() } }) {
+                  Icon(Icons.Rounded.Refresh, ns(chinese, "刷新", "Refresh"))
                 }
-                Row(
-                    Modifier.fillMaxWidth().padding(top = 14.dp).horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                  Button(
+          }
+          BrowserTargetSelector(
+              targets = allTargets,
+              selectedPackage = targetPackage ?: allTargets.firstOrNull()?.packageName,
+              onSelect = { target ->
+                if (target.packageName in targets.map(BrowserTarget::packageName)) {
+                  targetPackage = target.packageName
+                  editingId = null
+                  scripts = emptyList()
+                } else {
+                  openBrowserTarget = target
+                }
+              })
+          Row(
+              Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(top = 8.dp),
+              horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    FilledTonalButton(
+                      modifier = Modifier.height(38.dp),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                       enabled = targetPackage != null,
                       onClick = {
                         editorHighlight = false
@@ -505,49 +609,56 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
                         editorSourceLoaded = true
                         editorSourceVisible = true
                       }) {
-                        Icon(Icons.Rounded.Add, null)
-                        Spacer(Modifier.width(7.dp))
+                        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(5.dp))
                         Text(ns(chinese, "新建", "New"))
                       }
-                  FilledTonalButton(
+                    FilledTonalButton(
+                      modifier = Modifier.height(38.dp),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
                       enabled = targetPackage != null && !busy,
                       onClick = { showUrlInstaller = true }) {
-                    Icon(Icons.Rounded.Add, null)
-                    Spacer(Modifier.width(7.dp))
-                    Text(ns(chinese, "从 URL 安装", "Install from URL"))
+                        Icon(Icons.Rounded.Add, null, Modifier.size(18.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(ns(chinese, "URL 安装", "URL install"))
+                      }
+                    FilledTonalButton(
+                      modifier = Modifier.height(38.dp),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                      enabled = targetPackage != null && !busy,
+                      onClick = ::requestImport,
+                  ) {
+                    Icon(Icons.Rounded.FileUpload, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(ns(chinese, "导入", "Import"))
                   }
-                  FilledTonalButton(
-                      onClick = {
-                        controller.openScriptManager(
-                            allTargets.find { it.packageName == targetPackage })
-                      }) {
-                    Icon(Icons.AutoMirrored.Rounded.OpenInNew, null)
-                    Spacer(Modifier.width(7.dp))
-                    Text(ns(chinese, "浏览器管理页", "Browser manager"))
+                    FilledTonalButton(
+                      modifier = Modifier.height(38.dp),
+                      contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                      enabled = targetPackage != null && scripts.isNotEmpty() && !busy,
+                      onClick = ::requestExport,
+                  ) {
+                    Icon(Icons.Rounded.FileDownload, null, Modifier.size(18.dp))
+                    Spacer(Modifier.width(5.dp))
+                    Text(ns(chinese, "导出", "Export"))
                   }
-                }
-                Row(
-                    Modifier.padding(top = 14.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                  Icon(
-                      Icons.Rounded.Info,
-                      null,
-                      Modifier.padding(top = 2.dp).size(17.dp),
-                      tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                  )
-                  Text(
-                      ns(
-                          chinese,
-                          "在此编辑前需先打开对应浏览器建立通信\n也可以直接在浏览器管理页中操作",
-                          "Open the target browser first to connect for in-app editing\nYou can also manage scripts in the browser page"),
-                      Modifier.padding(start = 8.dp),
-                      style = MaterialTheme.typography.bodySmall,
-                      color = MaterialTheme.colorScheme.onPrimaryContainer,
-                  )
-                }
-              }
             }
+          Row(Modifier.padding(top = 10.dp), verticalAlignment = Alignment.Top) {
+            Icon(
+                Icons.Rounded.Info,
+                null,
+                Modifier.padding(top = 2.dp).size(17.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                ns(
+                    chinese,
+                    "在此编辑前需先打开对应浏览器建立通信，也可以直接在浏览器管理页中操作",
+                    "Open the target browser first to connect, or manage scripts in the browser page"),
+                Modifier.padding(start = 8.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        }
       }
       if (targets.isEmpty()) {
         item {
@@ -592,6 +703,21 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
               script = script,
               chinese = chinese,
               onOpen = { openEditor(script) },
+              onLongPress = {
+                val installUrl = script.installUrl.trim()
+                if (installUrl.isBlank()) {
+                  Log.toast(
+                      controller.context,
+                      ns(chinese, "该脚本没有可复制的安装链接", "This script has no install link"))
+                } else {
+                  (controller.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                      .setPrimaryClip(
+                          ClipData.newPlainText("ChromeXt install link: ${script.name}", installUrl))
+                  Log.toast(
+                      controller.context,
+                      ns(chinese, "已复制脚本安装链接", "Script install link copied"))
+                }
+              },
               onToggle = { disabled ->
                 runAction(ns(chinese, if (disabled) "脚本已停用" else "脚本已启用", if (disabled) "Script disabled" else "Script enabled")) {
                   request(
@@ -828,16 +954,18 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
   }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun NativeScriptCard(
     script: NativeScript,
     chinese: Boolean,
     onOpen: () -> Unit,
+    onLongPress: () -> Unit,
     onToggle: (Boolean) -> Unit,
 ) {
   Card(
-      onClick = onOpen,
-      modifier = Modifier.fillMaxWidth(),
+      modifier =
+          Modifier.fillMaxWidth().combinedClickable(onClick = onOpen, onLongClick = onLongPress),
       shape = RoundedCornerShape(22.dp),
       colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)) {
         Row(
@@ -894,27 +1022,62 @@ private fun RowScope.EditorToolToggle(
     onClick: () -> Unit,
 ) {
   Surface(
-      modifier = Modifier.weight(1f).height(34.dp).clickable(onClick = onClick),
-      shape = RoundedCornerShape(17.dp),
+      onClick = onClick,
+      modifier = Modifier.weight(1f).height(36.dp),
+      shape = RoundedCornerShape(18.dp),
       color =
           if (active) MaterialTheme.colorScheme.primaryContainer
           else MaterialTheme.colorScheme.surfaceContainerHighest,
+      border =
+          BorderStroke(
+              1.dp,
+              if (active) MaterialTheme.colorScheme.primary
+              else MaterialTheme.colorScheme.outlineVariant),
   ) {
     Row(
-        Modifier.fillMaxSize().padding(horizontal = 10.dp),
+        Modifier.fillMaxSize().padding(horizontal = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.Center,
-    ) {
-      Text(
-          label,
-          style = MaterialTheme.typography.labelMedium,
-          color =
-              if (active || momentary) MaterialTheme.colorScheme.primary
-              else MaterialTheme.colorScheme.onSurfaceVariant,
-          maxLines = 1,
-      )
-    }
+        horizontalArrangement = Arrangement.spacedBy(5.dp)) {
+          Text(
+              label,
+              Modifier.weight(1f),
+              style = MaterialTheme.typography.labelMedium,
+              color =
+                  if (active || momentary) MaterialTheme.colorScheme.primary
+                  else MaterialTheme.colorScheme.onSurfaceVariant,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis)
+          if (momentary) {
+            Icon(
+                Icons.AutoMirrored.Rounded.FormatAlignLeft,
+                null,
+                Modifier.size(17.dp),
+                tint = MaterialTheme.colorScheme.primary)
+          } else {
+            EditorToggleTrack(active)
+          }
+        }
   }
+}
+
+@Composable
+private fun EditorToggleTrack(active: Boolean) {
+  val offset by animateDpAsState(if (active) 13.dp else 1.dp, label = "editorToggle")
+  Box(
+      Modifier.width(30.dp)
+          .height(18.dp)
+          .clip(CircleShape)
+          .background(
+              if (active) MaterialTheme.colorScheme.primary
+              else MaterialTheme.colorScheme.surfaceVariant)) {
+        Box(
+            Modifier.offset(x = offset, y = 1.dp)
+                .size(16.dp)
+                .clip(CircleShape)
+                .background(
+                    if (active) MaterialTheme.colorScheme.onPrimary
+                    else MaterialTheme.colorScheme.outline))
+      }
 }
 
 @Composable
@@ -1306,8 +1469,8 @@ private fun ScriptEditor(
         ) {
           Column(Modifier.fillMaxSize()) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 7.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(5.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
               EditorToolToggle(

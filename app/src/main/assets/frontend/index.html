@@ -16,7 +16,6 @@
           <div>
             <h1 data-i18n="managerTitle">Script Manager</h1>
           </div>
-          <button id="new-script" class="icon-button" type="button" aria-label="New script">+</button>
         </header>
 
         <label class="search-box">
@@ -29,6 +28,9 @@
         </label>
 
         <div class="library-actions">
+          <button id="new-script" class="ghost-inline" type="button" data-i18n="newScript">
+            New Script
+          </button>
           <button id="install-url" class="ghost-inline" type="button" data-i18n="installFromUrl">
             Install from URL
           </button>
@@ -40,7 +42,7 @@
           </button>
           <button
             id="batch-reinstall"
-            class="ghost-inline"
+            class="ghost-inline batch-action"
             type="button"
             data-i18n="batchReinstall">
             Batch reinstall
@@ -105,13 +107,16 @@
         <section id="source-panel" class="source-panel">
           <div class="source-tool-row">
             <button id="syntax-toggle" class="editor-toggle" type="button" aria-pressed="false">
-              <span class="toggle-dot"></span><span data-i18n="syntaxHighlight">Syntax highlight</span>
+              <span class="toggle-label" data-i18n="syntaxHighlight">Syntax highlight</span>
+              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
             </button>
             <button id="lines-toggle" class="editor-toggle active" type="button" aria-pressed="true">
-              <span class="toggle-dot"></span><span data-i18n="lineNumbers">Line numbers</span>
+              <span class="toggle-label" data-i18n="lineNumbers">Line numbers</span>
+              <span class="toggle-track" aria-hidden="true"><span class="toggle-thumb"></span></span>
             </button>
             <button id="format-source" class="editor-toggle momentary" type="button" aria-pressed="false">
-              <span class="toggle-dot"></span><span data-i18n="formatSource">Format</span>
+              <span class="toggle-label" data-i18n="formatSource">Format</span>
+              <span class="format-glyph" aria-hidden="true">↹</span>
             </button>
           </div>
           <div id="source-workspace" class="source-workspace with-lines">

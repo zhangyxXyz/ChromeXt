@@ -25,7 +25,7 @@
     if (tag.startsWith("zh")) return "zh";
     return "en";
   }
-  const activeLanguage = resolveLanguage(globalThis.__ChromeXtLanguage || "system");
+  let activeLanguage = resolveLanguage(globalThis.__ChromeXtLanguage || "system");
   function t(key, values = {}) {
     const template = i18n[activeLanguage]?.[key] || i18n.en?.[key] || key;
     return template.replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
@@ -384,6 +384,25 @@
       }
     }
   `;
+
+  function applyPanelAppearance(nextAppearance = {}) {
+    globalThis.__ChromeXtAppearance = nextAppearance;
+    const nextPalette = nextAppearance.palette || {};
+    const variables = {
+      "--cx-primary": nextPalette.primary || nextAppearance.seed || "#6750a4",
+      "--cx-on-primary": nextPalette.onPrimary || "#ffffff",
+      "--cx-primary-container": nextPalette.primaryContainer || "#eaddff",
+      "--cx-on-primary-container": nextPalette.onPrimaryContainer || "#21005d",
+      "--cx-background": nextPalette.background || "#fffbfe",
+      "--cx-surface": nextPalette.surface || "#fffbfe",
+      "--cx-surface-container": nextPalette.surfaceContainer || "#f3edf7",
+      "--cx-on-surface": nextPalette.onSurface || "#1d1b20",
+      "--cx-on-surface-variant": nextPalette.onSurfaceVariant || "#49454f",
+      "--cx-outline": nextPalette.outline || "#79747e",
+    };
+    Object.entries(variables).forEach(([name, value]) => host.style.setProperty(name, value));
+    host.style.colorScheme = nextAppearance.dark ? "dark" : "light";
+  }
 
   const backdrop = document.createElement("div");
   backdrop.className = "backdrop";
@@ -807,6 +826,16 @@
     { passive: true }
   );
   ChromeXt.addEventListener("commandsUpdated", () => render(true));
+  ChromeXt.addEventListener("settings", (event) => {
+    const detail = event.detail || {};
+    if (detail.language) {
+      globalThis.__ChromeXtLanguage = detail.language;
+      activeLanguage = resolveLanguage(detail.language);
+    }
+    if (detail.appearance) applyPanelAppearance(detail.appearance);
+    render(true);
+    renderConfirm();
+  });
   render(true);
 
   const refreshTimer = setInterval(() => {

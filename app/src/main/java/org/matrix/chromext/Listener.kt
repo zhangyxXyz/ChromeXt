@@ -19,6 +19,9 @@ import java.io.File
 import java.io.FileReader
 import java.net.HttpURLConnection
 import java.net.URL
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import org.json.JSONArray
 import org.json.JSONObject
 import org.matrix.chromext.devtools.DevSessions
@@ -665,6 +668,19 @@ object Listener {
             }
           } else if (appTransfer.isNotBlank()) {
             transferScripts(appTransfer, currentTab, frameId)
+          } else if (data.optBoolean("browserExport")) {
+            val bundle = JSONObject(BrowserScriptApi.request("exportBundle", ""))
+            val browserPackage = Chrome.getContext().packageName
+            bundle.put("browserPackage", browserPackage)
+            val detail =
+                JSONObject(
+                    mapOf(
+                        "count" to (bundle.optJSONArray("scripts")?.length() ?: 0),
+                        "name" to
+                            "ChromeXt-userscripts-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.json",
+                        "content" to bundle.toString(2),
+                    ))
+            callback = "ChromeXt.post('script_export', $detail);"
           } else if (data.has("import")) {
             val sources = data.getJSONArray("import")
             var imported = 0

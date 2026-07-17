@@ -230,15 +230,18 @@ function reinstallableIds(ids = state.ids) {
 function copyInstallUrl(meta, label) {
   const url = installUrlFromMeta(meta);
   if (!url) {
-    send("toast", { message: t("noInstallLink") });
+    showToast(t("noInstallLink"));
     return;
   }
-  send("copy", {
-    type: "text",
-    text: url,
-    label: `ChromeXt install link: ${label || "UserScript"}`,
-    toast: t("copiedInstallLink"),
-  });
+  send(
+    "copy",
+    JSON.stringify({
+      type: "text",
+      text: url,
+      label: `ChromeXt install link: ${label || "UserScript"}`,
+      toast: t("copiedInstallLink"),
+    })
+  );
 }
 
 function addLongPress(target, action) {
@@ -586,15 +589,57 @@ function exportScripts() {
 }
 
 function importScripts() {
-  els.status.textContent = t("importingLatestScripts");
-  send("userscript", JSON.stringify({ appTransfer: "import" }));
+  els.importFile.click();
 }
 
-function saveExportFile(detail = {}) {
-  els.status.textContent = t("exportedScripts", {
-    count: detail.count || 0,
-    path: detail.path || "",
-  });
+async function saveExportFile(detail = {}) {
+  const content = detail.content || "";
+  const name = detail.name || "ChromeXt-userscripts.json";
+  if (!content) {
+    els.status.textContent = t("scriptActionFailed");
+    return;
+  }
+  const blob = new Blob([content], { type: "application/json;charset=utf-8" });
+  if (typeof globalThis.showSaveFilePicker === "function") {
+    try {
+      const handle = await globalThis.showSaveFilePicker({
+        suggestedName: name,
+        types: [
+          {
+            description: "ChromeXt UserScript backup",
+            accept: { "application/json": [".json"] },
+          },
+        ],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      const message = t("exportedWithBrowser", {
+        count: detail.count || 0,
+        name: handle.name || name,
+      });
+      els.status.textContent = message;
+      showToast(message);
+      return;
+    } catch (error) {
+      if (error?.name === "AbortError") {
+        els.status.textContent = t("exportCancelled");
+        return;
+      }
+    }
+  }
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = name;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30_000);
+  const message = t("exportedWithBrowser", { count: detail.count || 0, name });
+  els.status.textContent = message;
+  showToast(message);
 }
 
 function sourcesFromImportText(text) {
@@ -844,6 +889,11 @@ ChromeXt?.addEventListener("script_transfer_complete", (event) => {
     els.status.textContent = detail.message || t("scriptActionFailed");
     return;
   }
+  if (detail.status === "browser_picker") {
+    if (detail.action === "import") els.importFile.click();
+    else send("userscript", JSON.stringify({ browserExport: true }));
+    return;
+  }
   if (detail.action === "import") {
     const message = t("importedScripts", {
       count: detail.imported || 0,
@@ -853,8 +903,9 @@ ChromeXt?.addEventListener("script_transfer_complete", (event) => {
     showToast(message);
     send("userscript", "");
   } else {
-    const message = t("exportedToConfiguredDirectory", {
+    const message = t(detail.defaultPath ? "exportedScriptsDefault" : "exportedScriptsCustom", {
       count: detail.count || 0,
+      path: detail.path || detail.directory || "",
     });
     els.status.textContent = message;
     showToast(message);
@@ -862,10 +913,12 @@ ChromeXt?.addEventListener("script_transfer_complete", (event) => {
 });
 ChromeXt?.addEventListener("script_imported", (event) => {
   const detail = event.detail || {};
-  els.status.textContent = t("importedScripts", {
+  const message = t("importedScripts", {
     count: detail.imported || 0,
     failed: detail.failed || 0,
   });
+  els.status.textContent = message;
+  showToast(message);
   send("userscript", "");
 });
 ChromeXt?.addEventListener("script_reinstalled", (event) => {
@@ -904,6 +957,7 @@ els.batchReinstall.addEventListener("click", () => requestReinstall(state.ids));
 els.delete.addEventListener("click", deleteScript);
 els.exportScripts.addEventListener("click", exportScripts);
 els.importScripts.addEventListener("click", importScripts);
+els.importFile.addEventListener("change", importSelectedFiles);
 els.installUrl.addEventListener("click", openUrlInstaller);
 els.installUrlCancel.addEventListener("click", () => els.installUrlDialog.close());
 els.installUrlForm.addEventListener("submit", submitUrlInstaller);

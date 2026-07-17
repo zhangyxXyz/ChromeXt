@@ -200,8 +200,13 @@ object BrowserScriptApi {
       }
 
   private fun importBundle(raw: String): JSONObject {
-    val root = JSONObject(raw)
-    val scripts = root.optJSONArray("scripts") ?: error("No scripts found in import file")
+    val trimmed = raw.trim()
+    val scripts =
+        if (trimmed.startsWith("// ==UserScript==")) {
+          JSONArray().put(raw)
+        } else {
+          JSONObject(raw).optJSONArray("scripts") ?: error("No scripts found in import file")
+        }
     var imported = 0
     var failed = 0
     for (index in 0 until scripts.length()) {
