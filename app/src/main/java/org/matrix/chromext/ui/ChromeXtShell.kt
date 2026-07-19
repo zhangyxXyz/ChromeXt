@@ -85,10 +85,12 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import com.kyant.backdrop.Backdrop
 import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import org.matrix.chromext.BuildConfig
+import org.matrix.chromext.R
 import org.matrix.chromext.UiLocalization
 import org.matrix.chromext.backup.BackupManager
 import org.matrix.chromext.backup.ScriptTransferManager
@@ -96,6 +98,7 @@ import org.matrix.chromext.ui.common.NavigationSettingItem
 import org.matrix.chromext.ui.common.SettingGroup
 import org.matrix.chromext.ui.common.SettingItem
 import org.matrix.chromext.ui.common.SettingLeadingIcon
+import org.matrix.chromext.ui.common.SettingTitleWithHelp
 import org.matrix.chromext.ui.common.SwitchSettingItem
 import org.matrix.chromext.ui.glass.LiquidGlassBottomBar
 import org.matrix.chromext.ui.glass.LiquidGlassBottomBarItem
@@ -111,6 +114,7 @@ enum class SettingsPage {
   Appearance,
   Language,
   Backup,
+  WebDav,
   About,
   ReleaseHistory,
 }
@@ -128,8 +132,11 @@ fun ChromeXtShell(controller: ChromeXtController) {
   }
   BackHandler(enabled = controller.settingsPage != SettingsPage.Root) {
     controller.settingsPage =
-        if (controller.settingsPage == SettingsPage.ReleaseHistory) SettingsPage.About
-        else SettingsPage.Root
+        when (controller.settingsPage) {
+          SettingsPage.ReleaseHistory -> SettingsPage.About
+          SettingsPage.WebDav -> SettingsPage.Backup
+          else -> SettingsPage.Root
+        }
   }
   BackHandler(
       enabled = controller.settingsPage == SettingsPage.Root && controller.currentTab != MainTab.Home) {
@@ -141,6 +148,7 @@ fun ChromeXtShell(controller: ChromeXtController) {
         SettingsPage.Appearance -> tx(chinese, "外观", "Appearance")
         SettingsPage.Language -> tx(chinese, "语言", "Language")
         SettingsPage.Backup -> tx(chinese, "备份与恢复", "Backup and restore")
+        SettingsPage.WebDav -> tx(chinese, "WebDAV 配置", "WebDAV configuration")
         SettingsPage.About -> tx(chinese, "关于", "About")
         SettingsPage.ReleaseHistory -> tx(chinese, "更新历史", "Release history")
         SettingsPage.Root ->
@@ -160,10 +168,10 @@ fun ChromeXtShell(controller: ChromeXtController) {
                 IconButton(
                     onClick = {
                       controller.settingsPage =
-                          if (controller.settingsPage == SettingsPage.ReleaseHistory) {
-                            SettingsPage.About
-                          } else {
-                            SettingsPage.Root
+                          when (controller.settingsPage) {
+                            SettingsPage.ReleaseHistory -> SettingsPage.About
+                            SettingsPage.WebDav -> SettingsPage.Backup
+                            else -> SettingsPage.Root
                           }
                     }) {
                   Icon(
@@ -201,6 +209,7 @@ fun ChromeXtShell(controller: ChromeXtController) {
             SettingsPage.Appearance -> AppearanceSettingsScreen(controller)
             SettingsPage.Language -> LanguageSettingsScreen(controller)
             SettingsPage.Backup -> BackupLandingScreen(controller)
+            SettingsPage.WebDav -> WebDavSettingsScreen(controller)
             SettingsPage.About -> AboutSettingsScreen(controller)
             SettingsPage.ReleaseHistory -> ReleaseHistoryScreen(controller)
             SettingsPage.Root ->
@@ -356,6 +365,7 @@ private fun HomeScreen(controller: ChromeXtController) {
                 },
             icon = Icons.Rounded.BrowserUpdated,
             modifier = Modifier.weight(1f),
+            helpMarkdown = stringResource(R.string.help_browser_connection),
         )
       }
     }
@@ -365,6 +375,7 @@ private fun HomeScreen(controller: ChromeXtController) {
             Icons.Rounded.Code,
             tx(chinese, "打开脚本管理", "Open script manager"),
             tx(chinese, "在已配置作用域的浏览器中管理用户脚本", "Manage userscripts in a scoped browser"),
+            helpMarkdown = stringResource(R.string.help_browser_connection),
         ) {
           controller.openScriptManager()
         }
@@ -374,6 +385,7 @@ private fun HomeScreen(controller: ChromeXtController) {
             tx(chinese, "在网页边缘显示运行时脚本面板入口", "Show the runtime panel launcher on page edges"),
             controller.runtimeLauncherEnabled(),
             controller::setRuntimeLauncherEnabled,
+            helpMarkdown = stringResource(R.string.help_runtime_launcher),
         )
         SwitchRow(
             Icons.Rounded.Http,
@@ -381,6 +393,7 @@ private fun HomeScreen(controller: ChromeXtController) {
             tx(chinese, "Chrome 推荐开启\n小米浏览器通常无需开启", "Recommended for Chrome\nUsually unnecessary for Mi Browser"),
             controller.localServerEnabled(),
             controller::setLocalServerEnabled,
+            helpMarkdown = stringResource(R.string.help_local_http_server),
         )
       }
     }
@@ -739,6 +752,7 @@ private fun DashboardCard(
     icon: ImageVector,
     modifier: Modifier,
     onClick: (() -> Unit)? = null,
+    helpMarkdown: String? = null,
 ) {
   val shape = RoundedCornerShape(22.dp)
   Card(
@@ -754,7 +768,11 @@ private fun DashboardCard(
               Icon(icon, null, tint = MaterialTheme.colorScheme.primary)
               Column(Modifier.padding(start = 12.dp)) {
                 Text(value, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                SettingTitleWithHelp(
+                    title = title,
+                    helpMarkdown = helpMarkdown,
+                    textStyle = MaterialTheme.typography.labelMedium,
+                    textColor = MaterialTheme.colorScheme.onSurfaceVariant)
               }
             }
       }
@@ -766,8 +784,19 @@ private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Un
 }
 
 @Composable
-private fun ActionRow(icon: ImageVector, title: String, detail: String, onClick: () -> Unit) {
-  NavigationSettingItem(title = title, description = detail, icon = icon, onClick = onClick)
+private fun ActionRow(
+    icon: ImageVector,
+    title: String,
+    detail: String,
+    helpMarkdown: String? = null,
+    onClick: () -> Unit,
+) {
+  NavigationSettingItem(
+      title = title,
+      description = detail,
+      icon = icon,
+      helpMarkdown = helpMarkdown,
+      onClick = onClick)
 }
 
 @Composable
@@ -777,12 +806,14 @@ private fun SwitchRow(
     detail: String,
     checked: Boolean,
     onChange: (Boolean) -> Unit,
+    helpMarkdown: String? = null,
 ) {
   SwitchSettingItem(
       title = title,
       description = detail,
       icon = icon,
       checked = checked,
+      helpMarkdown = helpMarkdown,
       onCheckedChange = onChange,
   )
 }

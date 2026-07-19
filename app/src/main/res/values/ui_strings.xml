@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dialog_ok">OK</string>
+    <string name="dialog_cancel">Cancel</string>
+    <string name="save">Save</string>
+    <string name="settings_saved">Settings saved</string>
+    <string name="not_set">Not set</string>
+    <string name="operation_failed">Operation failed</string>
+    <string name="more_information">More information</string>
+    <string name="native_script_manager">Native script manager</string>
+    <string name="no_backups">No backups found</string>
+
+    <string name="backup_security">Security</string>
+    <string name="backup_now">Back up now</string>
+    <string name="backup_now_summary">Tap for local + cloud; long-press for destination</string>
+    <string name="backup_connect_summary">Tap to open the browser and connect</string>
+    <string name="backup_local">Local</string>
+    <string name="backup_local_panel">Local backup</string>
+    <string name="backup_folder">Backup folder</string>
+    <string name="backup_encryption_password">Backup encryption password</string>
+    <string name="backup_encryption_disabled">Not encrypted</string>
+    <string name="backup_encryption_enabled">AES-256 password configured</string>
+    <string name="backup_webdav_config">Include WebDAV configuration</string>
+    <string name="backup_webdav_config_summary">Recommended only for encrypted backups</string>
+
+    <string name="webdav_configuration">WebDAV configuration</string>
+    <string name="webdav_configuration_required">Enter the server, account, and password</string>
+    <string name="webdav_account_label">Account</string>
+    <string name="webdav_password">App password</string>
+    <string name="webdav_device_name">Device name</string>
+    <string name="webdav_device_name_summary">Included in backup filenames to identify this device</string>
+    <string name="webdav_server_label">WebDAV server URL</string>
+    <string name="webdav_url_summary">May include a base path, e.g. https://example.com/dav/user/</string>
+    <string name="webdav_directory">Subfolder</string>
+    <string name="webdav_directory_summary">Relative to the server URL, e.g. backup/app</string>
+    <string name="webdav_space_title">Remote backup space</string>
+    <string name="webdav_endpoint">Connection location</string>
+    <string name="webdav_test">Test connection</string>
+    <string name="webdav_test_config_required">Complete the configuration to enable testing</string>
+    <string name="webdav_test_success">WebDAV connection succeeded</string>
+    <string name="webdav_connection_testing">Connecting…</string>
+    <string name="webdav_connection_verified">Connection verified</string>
+    <string name="webdav_connection_failed">Connection failed</string>
+    <string name="webdav_ready_to_test">Configuration complete · ready to test</string>
+    <string name="password_show">Show password</string>
+    <string name="password_hide">Hide password</string>
+
+    <string name="help_browser_connection">## What “browser connection” means\n\n“Connected” only means that the **ChromeXt app can currently communicate with an open browser**. It is mainly used to:\n\n- view, edit, import, or export that browser’s userscripts inside the app\n- start backup and restore operations from the app\n- let the app read the browser’s current script data\n\n## Normal use is unaffected\n\nWhen the browser is not connected, script injection, installed userscripts, the floating launcher, and the in-browser manager continue to work. **You do not need to keep the app connected for everyday browsing.**\n\nThe connection ends when the browser closes and is restored automatically after reopening a supported browser in the LSPosed scope. This browser connection is also separate from the “module service” connection shown on Home.</string>
+    <string name="help_runtime_launcher">## In-page shortcut\n\nWhen enabled, ChromeXt shows a draggable edge launcher for opening the current page’s script panel.\n\n- It only controls the launcher’s visibility and does not disable userscripts\n- When disabled, scripts can still be managed from the browser menu or script manager</string>
+    <string name="help_local_http_server">## Local communication service\n\nThis starts a device-local HTTP endpoint used by some Chromium browsers for page-to-module communication.\n\n- **Chrome:** usually recommended\n- **Mi Browser:** normally uses another communication path and does not need it\n- The service is for local communication only; it is not a LAN sharing server\n\nIf everything already works, there is no need to change this setting.</string>
+    <string name="help_backup_now">## Backup destinations\n\n- **Tap:** save locally and upload to WebDAV\n- **Long press:** choose local only, cloud only, or both\n- Android asks for a folder before the first local backup if none has been selected\n\nAn app-initiated backup temporarily needs the target browser connection to read its script data. This connection is only for in-app operations and does not affect normal ChromeXt use inside the browser.</string>
+    <string name="help_backup_folder">## Folder selection\n\n- The recommended location is **Documents/ChromeXt**\n- Your selection is remembered, so later backups do not ask again\n- Long press this row to copy the displayed relative path\n\nAndroid grants ChromeXt access only to the selected folder. Separate package-name subfolders are created for different browsers.</string>
+    <string name="help_backup_encryption">## How encryption works\n\n- New ZIP backups use **AES-256** when a password is set\n- The same password must be configured before restoring an encrypted backup\n- Clearing the password disables encryption only for new backups; it does not decrypt existing files\n\nKeep the password somewhere safe. A forgotten password cannot be recovered.</string>
+    <string name="help_backup_webdav_config">## Sensitive backup content\n\nWhen enabled, the backup includes the WebDAV server address, account, app password, subfolder, and device name.\n\n- This option is off by default\n- Configure backup encryption before including WebDAV credentials\n- Restore the archive only on a device you trust</string>
+    <string name="webdav_url_help">Enter the complete WebDAV service URL. It may include a base path, for example:\n\n`https://example.com/dav/user/`\n\nThe subfolder below is appended to this address, so it does not need to be repeated here.</string>
+    <string name="webdav_directory_help">This is a **relative path** below the WebDAV server URL, for example `backup/app`.\n\nDo not enter a full URL or a leading slash. The folder is created automatically when possible.</string>
+
+    <string name="about_privacy_content">## Local data\n\n- Userscripts, settings, backup records, and appearance preferences are stored on this device\n- ChromeXt does not include advertising, analytics, or user-behavior tracking\n\n## Network access\n\nNetwork access occurs only when you use a related feature:\n\n- WebDAV connection, backup, and restore\n- GitHub Release checks, update downloads, and project links\n- Network access declared by installed userscripts\n\n## Credentials and backups\n\n- WebDAV credentials are stored in module settings only after you save the configuration\n- The app prompts before including WebDAV configuration in a backup; encrypted-backup safety depends on your password\n- Restore replaces the corresponding local data only after confirmation\n\n## Third-party services\n\nWebDAV servers, browsers, userscript target sites, and GitHub process requests under their own terms and privacy policies. Verify the source and policies before connecting a service or installing a script.</string>
+    <string name="about_disclaimer_content"># Disclaimer\n\nChromeXt is open-source software and is provided “as is”, without warranty of any kind.\n\n## User responsibility\n\n- You are responsible for the legality, accuracy, security, and availability of userscripts, websites, WebDAV services, backup files, and update packages\n- Keep an independent copy of important data and verify content before restoring a backup or installing a script or update\n- Userscripts can execute code in browser pages; install only scripts you trust\n\n## Project responsibility\n\nThe maintainers do not host user content and cannot guarantee the availability or behavior of third-party scripts, websites, browsers, or network services. To the extent permitted by law, the maintainers are not liable for data loss, interruption, security incidents, or other damages arising from use of this app.</string>
+</resources>

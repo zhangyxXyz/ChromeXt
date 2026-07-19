@@ -43,6 +43,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.FormatAlignLeft
 import androidx.compose.material.icons.automirrored.rounded.OpenInNew
@@ -104,10 +105,13 @@ import androidx.compose.ui.text.input.TransformedText
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.appcompat.widget.AppCompatEditText
 import org.matrix.chromext.UiLocalization
+import org.matrix.chromext.R
 import org.matrix.chromext.ui.common.BrowserTargetSelector
+import org.matrix.chromext.ui.common.MarkdownHelpDialog
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -155,6 +159,7 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
   val targets = controller.connectedBrowserTargets()
   var targetPackage by remember { mutableStateOf<String?>(null) }
   var showTargetPicker by remember { mutableStateOf(false) }
+  var showManagerHelp by remember { mutableStateOf(false) }
   var openBrowserTarget by remember { mutableStateOf<BrowserTarget?>(null) }
   var pendingConnectionTarget by remember { mutableStateOf<String?>(null) }
   var scripts by remember { mutableStateOf<List<NativeScript>>(emptyList()) }
@@ -551,7 +556,7 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
             Icon(Icons.Rounded.Code, null, Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
             Column(Modifier.padding(start = 14.dp).weight(1f)) {
               Text(
-                  ns(chinese, "原生脚本管理", "Native script manager"),
+                  stringResource(R.string.native_script_manager),
                   style = MaterialTheme.typography.titleLarge,
                   fontWeight = FontWeight.Bold)
               Text(
@@ -559,6 +564,11 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
                       ?: ns(chinese, "等待浏览器连接", "Waiting for browser"),
                   style = MaterialTheme.typography.bodySmall,
                   color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            IconButton(onClick = { showManagerHelp = true }) {
+              Icon(
+                  Icons.AutoMirrored.Rounded.MenuBook,
+                  stringResource(R.string.more_information))
             }
             IconButton(
                 onClick = {
@@ -821,6 +831,13 @@ fun NativeScriptsScreen(controller: ChromeXtController) {
             Text(ns(chinese, "安装", "Install"))
           }
         },
+    )
+  }
+  if (showManagerHelp) {
+    MarkdownHelpDialog(
+        title = stringResource(R.string.native_script_manager),
+        markdown = stringResource(R.string.help_browser_connection),
+        onDismiss = { showManagerHelp = false },
     )
   }
   oversizedSource?.let { (id, length) ->

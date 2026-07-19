@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="dialog_ok">確定</string>
+    <string name="dialog_cancel">取消</string>
+    <string name="save">儲存</string>
+    <string name="settings_saved">設定已儲存</string>
+    <string name="not_set">尚未設定</string>
+    <string name="operation_failed">操作失敗</string>
+    <string name="more_information">詳細說明</string>
+    <string name="native_script_manager">原生腳本管理</string>
+    <string name="no_backups">找不到備份</string>
+
+    <string name="backup_security">安全性</string>
+    <string name="backup_now">立即備份</string>
+    <string name="backup_now_summary">點擊備份到本機和雲端，長按選擇目標</string>
+    <string name="backup_connect_summary">點擊開啟瀏覽器並建立連線</string>
+    <string name="backup_local">本機</string>
+    <string name="backup_local_panel">本機備份</string>
+    <string name="backup_folder">備份目錄</string>
+    <string name="backup_encryption_password">備份加密密碼</string>
+    <string name="backup_encryption_disabled">未加密</string>
+    <string name="backup_encryption_enabled">已設定 AES-256 密碼</string>
+    <string name="backup_webdav_config">包含 WebDAV 設定</string>
+    <string name="backup_webdav_config_summary">僅建議在已設定加密密碼時開啟</string>
+
+    <string name="webdav_configuration">WebDAV 設定</string>
+    <string name="webdav_configuration_required">請填寫伺服器、帳號與密碼</string>
+    <string name="webdav_account_label">帳號</string>
+    <string name="webdav_password">應用程式密碼</string>
+    <string name="webdav_device_name">裝置名稱</string>
+    <string name="webdav_device_name_summary">寫入備份檔名，用於區分不同裝置</string>
+    <string name="webdav_server_label">WebDAV 伺服器位址</string>
+    <string name="webdav_url_summary">可包含基礎路徑，例如 https://example.com/dav/user/</string>
+    <string name="webdav_directory">子資料夾</string>
+    <string name="webdav_directory_summary">伺服器位址下的相對路徑，例如 backup/app</string>
+    <string name="webdav_space_title">遠端備份空間</string>
+    <string name="webdav_endpoint">連線位置</string>
+    <string name="webdav_test">測試連線</string>
+    <string name="webdav_test_config_required">設定完整後可測試</string>
+    <string name="webdav_test_success">WebDAV 連線正常</string>
+    <string name="webdav_connection_testing">正在連線…</string>
+    <string name="webdav_connection_verified">連線已驗證</string>
+    <string name="webdav_connection_failed">連線失敗</string>
+    <string name="webdav_ready_to_test">設定完整 · 可以測試連線</string>
+    <string name="password_show">顯示密碼</string>
+    <string name="password_hide">隱藏密碼</string>
+
+    <string name="help_browser_connection">## 「連線瀏覽器」是什麼\n\n「已連線」只表示 **ChromeXt App 目前可以和已開啟的瀏覽器通訊**，主要用於：\n\n- 在 App 內檢視、編輯、匯入或匯出該瀏覽器的使用者腳本\n- 從 App 發起備份與還原\n- 讓 App 讀取該瀏覽器目前的腳本資料\n\n## 不影響正常使用\n\n瀏覽器未連線時，ChromeXt 在瀏覽器內的腳本注入、已安裝腳本執行、懸浮入口和瀏覽器內管理頁仍可正常使用。**不需要為了日常瀏覽一直保持 App 與瀏覽器連線。**\n\n關閉瀏覽器後連線會中斷；重新開啟已加入 LSPosed 作用域的支援瀏覽器時會自動連線。這裡的瀏覽器連線也不同於首頁的「模組服務連線」。</string>
+    <string name="help_runtime_launcher">## 網頁內快速入口\n\n開啟後，ChromeXt 會在網頁邊緣顯示一個可拖曳入口，用於快速開啟目前頁面的腳本面板。\n\n- 只改變網頁中的入口是否顯示，不會停用使用者腳本\n- 關閉後仍可從瀏覽器選單或腳本管理頁管理腳本</string>
+    <string name="help_local_http_server">## 本機通訊服務\n\n此開關讓 ChromeXt 在裝置本機啟動一個僅供瀏覽器存取的 HTTP 通訊端點，部分 Chromium 瀏覽器需要它來完成頁面與模組之間的通訊。\n\n- **Chrome**：通常建議開啟\n- **小米瀏覽器**：通常使用其他通訊方式，無需開啟\n- 服務只監聽本機通訊，不是區域網路分享服務\n\n如果現有功能正常，不必僅因看到此選項而變更設定。</string>
+    <string name="help_backup_now">## 備份目標\n\n- **點擊**：備份到本機並上傳到 WebDAV\n- **長按**：可選擇僅本機、僅雲端或兩者皆備份\n- 尚未選擇本機目錄時，首次本機備份前會由 Android 提示選擇\n\n從 App 發起備份時，需要暫時連線目標瀏覽器以讀取腳本資料；此連線只服務於 App 內操作，不影響瀏覽器中 ChromeXt 的正常使用。</string>
+    <string name="help_backup_folder">## 目錄選擇\n\n- 建議使用 **Documents/ChromeXt**\n- 選擇結果會被記住，後續備份不再重複詢問\n- 長按此項目可複製目前顯示的相對路徑\n\nAndroid 只會授予 ChromeXt 存取所選目錄的權限；不同瀏覽器會自動依套件名稱分目錄儲存。</string>
+    <string name="help_backup_encryption">## 加密方式\n\n- 設定密碼後，新產生的 ZIP 備份使用 **AES-256** 加密\n- 還原加密備份前，需要先設定相同密碼\n- 清空密碼只會讓新備份停止加密，不會解密既有檔案\n\n請妥善保存密碼，遺忘後無法找回。</string>
+    <string name="help_backup_webdav_config">## 敏感備份內容\n\n開啟後，備份會包含 WebDAV 伺服器位址、帳號、應用程式密碼、子資料夾與裝置名稱。\n\n- 此選項預設關閉\n- 建議先設定備份加密密碼，再包含 WebDAV 憑證\n- 只在可信任裝置上還原此封存檔</string>
+    <string name="webdav_url_help">請填寫完整的 WebDAV 服務位址，可以包含基礎路徑，例如：\n\n`https://example.com/dav/user/`\n\n下方的子資料夾會接在此位址後面，無需在這裡重複填寫。</string>
+    <string name="webdav_directory_help">這裡填寫 WebDAV 伺服器位址下的**相對路徑**，例如 `backup/app`。\n\n不要填寫完整網址或開頭的斜線；條件允許時會自動建立目錄。</string>
+
+    <string name="about_privacy_content">## 本機資料\n\n- 使用者腳本、設定、備份記錄和介面偏好儲存在裝置本機\n- ChromeXt 不包含廣告、統計分析或使用者行為追蹤\n\n## 連網用途\n\n只有使用相關功能時才會連網：\n\n- WebDAV 連線、備份與還原\n- GitHub Release 更新檢查、更新套件下載及專案連結\n- 使用者腳本自身宣告的網路存取\n\n## 憑證與備份\n\n- WebDAV 憑證僅在你儲存設定後保存在模組設定中\n- WebDAV 設定寫入備份前會明確提示；加密備份的安全性取決於你設定的密碼\n- 還原操作會在確認後取代對應的本機資料\n\n## 第三方服務\n\nWebDAV 伺服器、瀏覽器、使用者腳本目標網站和 GitHub 會依據各自的服務條款與隱私權政策處理請求。連線服務或安裝腳本前，請先核實來源和政策。</string>
+    <string name="about_disclaimer_content"># 免責聲明\n\nChromeXt 是開放原始碼軟體，按「原樣」提供，不附帶任何形式的保證。\n\n## 使用者責任\n\n- 你應自行確認使用者腳本、網站、WebDAV 服務、備份檔案及更新套件來源的合法性、準確性、安全性與可用性\n- 還原備份、安裝腳本或更新前，請獨立保存重要資料並核驗內容\n- 使用者腳本可以在瀏覽器頁面中執行程式碼；僅安裝你信任的腳本\n\n## 專案責任\n\n專案維護者不託管使用者內容，也無法保證第三方腳本、網站、瀏覽器或網路服務的可用性及行為。在適用法律允許的範圍內，維護者不對使用本應用程式造成的資料遺失、服務中斷、安全問題或其他損失承擔責任。</string>
+</resources>

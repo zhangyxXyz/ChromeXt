@@ -99,7 +99,11 @@ fun SettingItem(
     Column(
         Modifier.padding(start = if (icon == null) 0.dp else 14.dp, end = 8.dp).weight(1f),
     ) {
-      SettingTitleWithHelp(title, helpMarkdown, enabled, titleTrailingContent)
+      SettingTitleWithHelp(
+          title = title,
+          helpMarkdown = helpMarkdown,
+          enabled = enabled,
+          trailingContent = titleTrailingContent)
       if (!description.isNullOrBlank()) {
         Text(
             description,

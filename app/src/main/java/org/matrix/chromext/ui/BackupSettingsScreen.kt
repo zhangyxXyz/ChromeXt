@@ -23,13 +23,30 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.CloudDone
+import androidx.compose.material.icons.outlined.CloudOff
+import androidx.compose.material.icons.outlined.CloudQueue
+import androidx.compose.material.icons.outlined.CloudSync
+import androidx.compose.material.icons.outlined.ChevronRight
+import androidx.compose.material.icons.outlined.Dns
+import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.FolderZip
+import androidx.compose.material.icons.outlined.Inventory2
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Restore
+import androidx.compose.material.icons.outlined.Route
+import androidx.compose.material.icons.outlined.Smartphone
+import androidx.compose.material.icons.outlined.Visibility
+import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material.icons.rounded.Backup
 import androidx.compose.material.icons.rounded.AllInclusive
 import androidx.compose.material.icons.rounded.Check
@@ -59,10 +76,13 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -80,12 +100,18 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.core.net.toUri
+import org.matrix.chromext.R
 import org.matrix.chromext.UiLocalization
 import org.matrix.chromext.ui.common.BrowserTargetSelector
 import org.matrix.chromext.ui.common.NavigationSettingItem
 import org.matrix.chromext.ui.common.SettingGroup
+import org.matrix.chromext.ui.common.SettingTitleWithHelp
 import org.matrix.chromext.ui.common.SwitchSettingItem
 import java.text.DateFormat
 import java.util.Date
@@ -113,7 +139,6 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
   var openBrowserTarget by remember { mutableStateOf<BrowserTarget?>(null) }
   var busy by remember { mutableStateOf(false) }
   var resultMessage by remember { mutableStateOf<String?>(null) }
-  var showWebDavEditor by remember { mutableStateOf(false) }
   var showPasswordEditor by remember { mutableStateOf(false) }
   var showBackupModeDialog by remember { mutableStateOf(false) }
   var pendingBackupMode by remember { mutableStateOf<BackupMode?>(null) }
@@ -323,7 +348,7 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
               },
           retention = retentionLabel(settings.remoteRetentionCount, chinese),
           chinese = chinese,
-          onConfigure = { showWebDavEditor = true },
+          onConfigure = { controller.settingsPage = SettingsPage.WebDav },
           onTest = {
             save(settings)
             runAction(bt(chinese, "WebDAV 连接成功", "WebDAV connection succeeded")) {
@@ -340,23 +365,25 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
       )
     }
     item {
-      BackupGroup(bt(chinese, "安全", "Security")) {
+      BackupGroup(stringResource(R.string.backup_security)) {
         BackupRow(
-            Icons.Rounded.Key,
-            bt(chinese, "备份加密密码", "Backup encryption password"),
-            if (settings.encryptionPassword.isBlank()) {
-              bt(chinese, "未加密", "Not encrypted")
+            icon = Icons.Rounded.Key,
+            title = stringResource(R.string.backup_encryption_password),
+            detail = if (settings.encryptionPassword.isBlank()) {
+              stringResource(R.string.backup_encryption_disabled)
             } else {
-              bt(chinese, "已设置 AES-256 密码", "AES-256 password configured")
+              stringResource(R.string.backup_encryption_enabled)
             },
+            helpMarkdown = stringResource(R.string.help_backup_encryption),
         ) {
           showPasswordEditor = true
         }
         BackupSwitchRow(
-            Icons.Rounded.Lock,
-            bt(chinese, "包含 WebDAV 配置", "Include WebDAV configuration"),
-            bt(chinese, "仅建议在已设置加密密码时开启", "Recommended only for encrypted backups"),
-            settings.includeWebDavConfig,
+            icon = Icons.Rounded.Lock,
+            title = stringResource(R.string.backup_webdav_config),
+            detail = stringResource(R.string.backup_webdav_config_summary),
+            checked = settings.includeWebDavConfig,
+            helpMarkdown = stringResource(R.string.help_backup_webdav_config),
         ) {
           save(settings.copy(includeWebDavConfig = it))
         }
@@ -386,16 +413,6 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
         },
         title = { Text(bt(chinese, "备份与恢复", "Backup and restore")) },
         text = { Text(message) })
-  }
-  if (showWebDavEditor) {
-    WebDavEditor(
-        initial = settings.webDav,
-        chinese = chinese,
-        onDismiss = { showWebDavEditor = false },
-    ) {
-      save(settings.copy(webDav = it))
-      showWebDavEditor = false
-    }
   }
   openBrowserTarget?.let { target ->
     AlertDialog(
@@ -520,9 +537,13 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
   localChoices?.let { choices ->
     BackupChoiceDialog(
         title = bt(chinese, "选择本地备份", "Choose local backup"),
-        names = choices.map(LocalBackup::name),
-        details = choices.map { backupDetail(it.modifiedAt, it.size, context, chinese) },
-        chinese = chinese,
+        choices =
+            choices.map {
+              BackupChoiceUi(
+                  name = it.name,
+                  detail = backupDetail(it.modifiedAt, it.size, context, chinese),
+                  remote = false)
+            },
         onDismiss = { localChoices = null },
     ) { index ->
       val target = targetPackage ?: return@BackupChoiceDialog
@@ -536,9 +557,13 @@ fun BackupSettingsScreen(controller: ChromeXtController) {
   remoteChoices?.let { choices ->
     BackupChoiceDialog(
         title = bt(chinese, "选择云端备份", "Choose remote backup"),
-        names = choices.map(RemoteBackup::name),
-        details = choices.map { backupDetail(it.modifiedAt, it.size, context, chinese) },
-        chinese = chinese,
+        choices =
+            choices.map {
+              BackupChoiceUi(
+                  name = it.name,
+                  detail = backupDetail(it.modifiedAt, it.size, context, chinese),
+                  remote = true)
+            },
         onDismiss = { remoteChoices = null },
     ) { index ->
       val target = targetPackage ?: return@BackupChoiceDialog
@@ -591,15 +616,16 @@ private fun BackupDashboardCard(
         }
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-          Text(
-              bt(chinese, "立即备份", "Back up now"),
-              style = MaterialTheme.typography.titleMedium,
-              fontWeight = FontWeight.SemiBold)
+          SettingTitleWithHelp(
+              stringResource(R.string.backup_now),
+              stringResource(R.string.help_backup_now),
+              enabled = !busy,
+          )
           Text(
               if (targetReady) {
-                bt(chinese, "点击备份到本地和云端，长按选择目标", "Tap for local + cloud; long-press for destination")
+                stringResource(R.string.backup_now_summary)
               } else {
-                bt(chinese, "点击打开浏览器并建立连接", "Tap to open the browser and connect")
+                stringResource(R.string.backup_connect_summary)
               },
               style = MaterialTheme.typography.bodyMedium,
               color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -615,7 +641,7 @@ private fun BackupDashboardCard(
         BackupReadyPill(
             Modifier.weight(1f),
             Icons.Rounded.Folder,
-            bt(chinese, "本地", "Local"),
+            stringResource(R.string.backup_local),
             localReady,
             chinese)
         BackupReadyPill(
@@ -670,7 +696,7 @@ private fun BackupStoragePanel(
     onRestoreOther: () -> Unit,
     onRetention: () -> Unit,
 ) {
-  BackupPanel(bt(chinese, "本地备份", "Local backup"), Icons.Rounded.Storage) {
+  BackupPanel(stringResource(R.string.backup_local_panel), Icons.Rounded.Storage) {
     @OptIn(ExperimentalFoundationApi::class)
     Row(
         Modifier.fillMaxWidth()
@@ -680,10 +706,10 @@ private fun BackupStoragePanel(
           Icon(Icons.Rounded.FolderOpen, null, tint = MaterialTheme.colorScheme.primary)
           Spacer(Modifier.width(12.dp))
           Column(Modifier.weight(1f)) {
-            Text(
-                bt(chinese, "备份目录", "Backup folder"),
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Medium)
+            SettingTitleWithHelp(
+                stringResource(R.string.backup_folder),
+                stringResource(R.string.help_backup_folder),
+            )
             Text(
                 path,
                 style = MaterialTheme.typography.bodySmall,
@@ -962,6 +988,7 @@ private fun BackupSwitchRow(
     title: String,
     detail: String,
     checked: Boolean,
+    helpMarkdown: String? = null,
     onChange: (Boolean) -> Unit,
 ) {
   SwitchSettingItem(
@@ -969,40 +996,451 @@ private fun BackupSwitchRow(
       description = detail,
       icon = icon,
       checked = checked,
+      helpMarkdown = helpMarkdown,
       onCheckedChange = onChange,
   )
 }
 
 @Composable
-private fun WebDavEditor(
-    initial: WebDavConfig,
-    chinese: Boolean,
-    onDismiss: () -> Unit,
-    onSave: (WebDavConfig) -> Unit,
+fun WebDavSettingsScreen(controller: ChromeXtController) {
+  val context = controller.context
+  val chinese = controller.isChinese
+  val manager = remember { BackupManager(context.applicationContext) }
+  var settings by remember { mutableStateOf(manager.settings()) }
+  var editingField by remember { mutableStateOf<String?>(null) }
+  var editingValue by remember { mutableStateOf("") }
+  var showAuthDialog by remember { mutableStateOf(false) }
+  var editingAccount by remember { mutableStateOf("") }
+  var editingPassword by remember { mutableStateOf("") }
+  var passwordVisible by remember { mutableStateOf(false) }
+  var testing by remember { mutableStateOf(false) }
+  var connectionVerified by remember { mutableStateOf<Boolean?>(null) }
+  val scope = rememberCoroutineScope()
+
+  fun saveWebDav(webDav: WebDavConfig) {
+    settings = settings.copy(webDav = webDav)
+    manager.saveSettings(settings)
+    connectionVerified = null
+    Toast.makeText(
+            context,
+            context.getString(R.string.settings_saved),
+            Toast.LENGTH_SHORT)
+        .show()
+  }
+
+  LazyColumn(
+      contentPadding = PaddingValues(start = 16.dp, top = 12.dp, end = 16.dp, bottom = 28.dp),
+      verticalArrangement = Arrangement.spacedBy(14.dp),
+  ) {
+    item {
+      WebDavOverviewCard(
+          configured = settings.webDav.isConfigured,
+          verified = connectionVerified,
+          identity = webDavIdentity(settings.webDav.url, settings.webDav.username),
+      )
+    }
+    item {
+      WebDavEndpointCard(
+          url = settings.webDav.url.ifBlank { stringResource(R.string.not_set) },
+          directory = settings.webDav.directory.ifBlank { "ChromeXt" },
+          onEditUrl = {
+            editingField = "url"
+            editingValue = settings.webDav.url
+          },
+          onEditDirectory = {
+            editingField = "directory"
+            editingValue = settings.webDav.directory
+          },
+      )
+    }
+    item {
+      Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        WebDavIdentityTile(
+            modifier = Modifier.weight(1f),
+            icon = Icons.Outlined.Person,
+            label = stringResource(R.string.webdav_account_label),
+            value = settings.webDav.username.ifBlank { stringResource(R.string.not_set) },
+            onClick = {
+              editingAccount = settings.webDav.username
+              editingPassword = settings.webDav.password
+              passwordVisible = false
+              showAuthDialog = true
+            },
+        )
+        WebDavIdentityTile(
+            modifier = Modifier.weight(1f),
+            icon = Icons.Outlined.Smartphone,
+            label = stringResource(R.string.webdav_device_name),
+            value = settings.webDav.deviceName.ifBlank { android.os.Build.MODEL },
+            onClick = {
+              editingField = "device"
+              editingValue = settings.webDav.deviceName
+            },
+        )
+      }
+    }
+    item {
+      Button(
+          onClick = {
+            if (testing || !settings.webDav.isConfigured) return@Button
+            testing = true
+            scope.launch {
+              runCatching { manager.testWebDav() }
+                  .onSuccess {
+                    connectionVerified = true
+                    Toast.makeText(
+                            context,
+                            context.getString(R.string.webdav_test_success),
+                            Toast.LENGTH_SHORT)
+                        .show()
+                  }
+                  .onFailure {
+                    connectionVerified = false
+                    Toast.makeText(
+                            context,
+                            UiLocalization.error(
+                                chinese,
+                                it.localizedMessage,
+                                context.getString(R.string.operation_failed),
+                                context.getString(R.string.operation_failed)),
+                            Toast.LENGTH_LONG)
+                        .show()
+                  }
+              testing = false
+            }
+          },
+          modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
+          enabled = settings.webDav.isConfigured && !testing,
+          shape = RoundedCornerShape(18.dp),
+      ) {
+        if (testing) {
+          CircularProgressIndicator(
+              Modifier.size(20.dp),
+              strokeWidth = 2.dp,
+              color = MaterialTheme.colorScheme.onPrimary)
+        } else {
+          Icon(Icons.Outlined.CloudSync, contentDescription = null)
+        }
+        Spacer(Modifier.width(10.dp))
+        Text(
+            stringResource(
+                if (testing) R.string.webdav_connection_testing else R.string.webdav_test))
+      }
+      if (!settings.webDav.isConfigured) {
+        Text(
+            stringResource(R.string.webdav_test_config_required),
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+      }
+    }
+  }
+
+  editingField?.let { field ->
+    val title =
+        when (field) {
+          "url" -> stringResource(R.string.webdav_server_label)
+          "directory" -> stringResource(R.string.webdav_directory)
+          else -> stringResource(R.string.webdav_device_name)
+        }
+    val supporting =
+        when (field) {
+          "url" -> stringResource(R.string.webdav_url_summary)
+          "directory" -> stringResource(R.string.webdav_directory_summary)
+          else -> stringResource(R.string.webdav_device_name_summary)
+        }
+    AlertDialog(
+        onDismissRequest = { editingField = null },
+        title = { Text(title) },
+        text = {
+          Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                editingValue,
+                { editingValue = it },
+                Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                singleLine = true,
+                label = { Text(title) },
+                shape = RoundedCornerShape(16.dp),
+            )
+            Text(
+                supporting,
+                Modifier.padding(horizontal = 4.dp),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant)
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { editingField = null }) {
+            Text(stringResource(R.string.dialog_cancel))
+          }
+        },
+        confirmButton = {
+          TextButton(
+              onClick = {
+                val webDav =
+                    when (field) {
+                      "url" -> settings.webDav.copy(url = editingValue.trim())
+                      "directory" ->
+                          settings.webDav.copy(directory = editingValue.trim().trim('/'))
+                      else -> settings.webDav.copy(deviceName = editingValue.trim())
+                    }
+                saveWebDav(webDav)
+                editingField = null
+              }) {
+                Text(stringResource(R.string.save))
+              }
+        },
+    )
+  }
+
+  if (showAuthDialog) {
+    AlertDialog(
+        onDismissRequest = { showAuthDialog = false },
+        title = { Text(stringResource(R.string.webdav_account_label)) },
+        text = {
+          Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            OutlinedTextField(
+                editingAccount,
+                { editingAccount = it },
+                Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                singleLine = true,
+                label = { Text(stringResource(R.string.webdav_account_label)) },
+                shape = RoundedCornerShape(16.dp),
+            )
+            OutlinedTextField(
+                editingPassword,
+                { editingPassword = it },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
+                singleLine = true,
+                label = { Text(stringResource(R.string.webdav_password)) },
+                shape = RoundedCornerShape(16.dp),
+                visualTransformation =
+                    if (passwordVisible) VisualTransformation.None
+                    else PasswordVisualTransformation(),
+                trailingIcon = {
+                  IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                    Icon(
+                        if (passwordVisible) Icons.Outlined.VisibilityOff
+                        else Icons.Outlined.Visibility,
+                        stringResource(
+                            if (passwordVisible) R.string.password_hide
+                            else R.string.password_show))
+                  }
+                },
+            )
+          }
+        },
+        dismissButton = {
+          TextButton(onClick = { showAuthDialog = false }) {
+            Text(stringResource(R.string.dialog_cancel))
+          }
+        },
+        confirmButton = {
+          TextButton(
+              onClick = {
+                saveWebDav(
+                    settings.webDav.copy(
+                        username = editingAccount.trim(), password = editingPassword))
+                showAuthDialog = false
+              }) {
+                Text(stringResource(R.string.save))
+              }
+        },
+    )
+  }
+}
+
+@Composable
+private fun WebDavOverviewCard(
+    configured: Boolean,
+    verified: Boolean?,
+    identity: String,
 ) {
-  var url by remember { mutableStateOf(initial.url) }
-  var user by remember { mutableStateOf(initial.username) }
-  var password by remember { mutableStateOf(initial.password) }
-  var directory by remember { mutableStateOf(initial.directory) }
-  var device by remember { mutableStateOf(initial.deviceName) }
-  AlertDialog(
-      onDismissRequest = onDismiss,
-      title = { Text(bt(chinese, "WebDAV 配置", "WebDAV configuration")) },
-      text = {
-        Column(verticalArrangement = Arrangement.spacedBy(9.dp)) {
-          OutlinedTextField(url, { url = it }, Modifier.fillMaxWidth(), label = { Text("URL") }, singleLine = true)
-          OutlinedTextField(user, { user = it }, Modifier.fillMaxWidth(), label = { Text(bt(chinese, "用户名", "Username")) }, singleLine = true)
-          OutlinedTextField(password, { password = it }, Modifier.fillMaxWidth(), label = { Text(bt(chinese, "密码", "Password")) }, singleLine = true, visualTransformation = PasswordVisualTransformation())
-          OutlinedTextField(directory, { directory = it }, Modifier.fillMaxWidth(), label = { Text(bt(chinese, "远端目录", "Remote folder")) }, singleLine = true)
-          OutlinedTextField(device, { device = it }, Modifier.fillMaxWidth(), label = { Text(bt(chinese, "设备名称", "Device name")) }, singleLine = true)
+  val statusText =
+      when (verified) {
+        true -> stringResource(R.string.webdav_connection_verified)
+        false -> stringResource(R.string.webdav_connection_failed)
+        null ->
+            stringResource(
+                if (configured) R.string.webdav_ready_to_test
+                else R.string.webdav_configuration_required)
+      }
+  val accent =
+      if (verified == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+  Card(
+      shape = RoundedCornerShape(28.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+  ) {
+    Column(Modifier.padding(20.dp)) {
+      Row(verticalAlignment = Alignment.CenterVertically) {
+        Box(
+            Modifier.size(54.dp)
+                .clip(RoundedCornerShape(17.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+          Icon(
+              imageVector =
+                  when (verified) {
+                    true -> Icons.Outlined.CloudDone
+                    false -> Icons.Outlined.CloudOff
+                    null -> Icons.Outlined.CloudQueue
+                  },
+              contentDescription = null,
+              modifier = Modifier.size(29.dp),
+              tint = accent,
+          )
         }
-      },
-      dismissButton = { TextButton(onClick = onDismiss) { Text(bt(chinese, "取消", "Cancel")) } },
-      confirmButton = {
-        Button(onClick = { onSave(WebDavConfig(url, user, password, directory, device)) }) {
-          Text(bt(chinese, "保存", "Save"))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+          Text(
+              stringResource(R.string.webdav_space_title),
+              style = MaterialTheme.typography.titleLarge,
+              fontWeight = FontWeight.SemiBold)
+          Text(
+              identity,
+              style = MaterialTheme.typography.bodySmall,
+              color = MaterialTheme.colorScheme.primary,
+              maxLines = 1,
+              overflow = TextOverflow.Ellipsis)
         }
-      })
+      }
+      Spacer(Modifier.height(18.dp))
+      Surface(
+          shape = RoundedCornerShape(14.dp),
+          color = MaterialTheme.colorScheme.surfaceContainerHighest) {
+            Row(
+                Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 11.dp),
+                verticalAlignment = Alignment.CenterVertically) {
+                  Box(Modifier.size(8.dp).clip(CircleShape).background(accent))
+                  Spacer(Modifier.width(9.dp))
+                  Text(statusText, style = MaterialTheme.typography.labelLarge, color = accent)
+                }
+          }
+    }
+  }
+}
+
+@Composable
+private fun WebDavEndpointCard(
+    url: String,
+    directory: String,
+    onEditUrl: () -> Unit,
+    onEditDirectory: () -> Unit,
+) {
+  OutlinedCard(
+      shape = RoundedCornerShape(24.dp),
+      border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+      colors = CardDefaults.outlinedCardColors(
+          containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+  ) {
+    Row(
+        Modifier.padding(start = 18.dp, top = 16.dp, end = 18.dp),
+        verticalAlignment = Alignment.CenterVertically) {
+          Icon(Icons.Outlined.Route, null, tint = MaterialTheme.colorScheme.primary)
+          Spacer(Modifier.width(10.dp))
+          Text(
+              stringResource(R.string.webdav_endpoint),
+              style = MaterialTheme.typography.titleMedium,
+              fontWeight = FontWeight.SemiBold)
+        }
+    WebDavEndpointRow(
+        icon = Icons.Outlined.Dns,
+        label = stringResource(R.string.webdav_server_label),
+        value = url,
+        helpMarkdown = stringResource(R.string.webdav_url_help),
+        onClick = onEditUrl,
+    )
+    HorizontalDivider(
+        Modifier.padding(horizontal = 18.dp), color = MaterialTheme.colorScheme.outlineVariant)
+    WebDavEndpointRow(
+        icon = Icons.Outlined.FolderOpen,
+        label = stringResource(R.string.webdav_directory),
+        value = directory,
+        helpMarkdown = stringResource(R.string.webdav_directory_help),
+        onClick = onEditDirectory,
+    )
+  }
+}
+
+@Composable
+private fun WebDavEndpointRow(
+    icon: ImageVector,
+    label: String,
+    value: String,
+    helpMarkdown: String,
+    onClick: () -> Unit,
+) {
+  Row(
+      Modifier.fillMaxWidth()
+          .clickable(onClick = onClick)
+          .padding(horizontal = 18.dp, vertical = 15.dp),
+      verticalAlignment = Alignment.CenterVertically,
+  ) {
+    Box(
+        Modifier.size(38.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(MaterialTheme.colorScheme.primaryContainer),
+        contentAlignment = Alignment.Center,
+    ) {
+      Icon(
+          icon,
+          null,
+          Modifier.size(20.dp),
+          tint = MaterialTheme.colorScheme.onPrimaryContainer)
+    }
+    Spacer(Modifier.width(12.dp))
+    Column(Modifier.weight(1f)) {
+      SettingTitleWithHelp(label, helpMarkdown)
+      Text(
+          value,
+          style = MaterialTheme.typography.bodyMedium,
+          color = MaterialTheme.colorScheme.primary,
+          maxLines = 2,
+          overflow = TextOverflow.Ellipsis)
+    }
+  }
+}
+
+@Composable
+private fun WebDavIdentityTile(
+    modifier: Modifier,
+    icon: ImageVector,
+    label: String,
+    value: String,
+    onClick: () -> Unit,
+) {
+  Card(
+      modifier = modifier.clickable(onClick = onClick),
+      shape = RoundedCornerShape(22.dp),
+      colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
+  ) {
+    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+      Box(
+          Modifier.size(38.dp)
+              .clip(RoundedCornerShape(12.dp))
+              .background(MaterialTheme.colorScheme.primaryContainer),
+          contentAlignment = Alignment.Center,
+      ) {
+        Icon(
+            icon,
+            null,
+            Modifier.size(20.dp),
+            tint = MaterialTheme.colorScheme.onPrimaryContainer)
+      }
+      Spacer(Modifier.height(14.dp))
+      Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+      Text(value, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
+    }
+  }
+}
+
+private fun webDavIdentity(url: String, username: String): String {
+  if (url.isBlank() && username.isBlank()) return "WebDAV"
+  val host = runCatching { url.toUri().host }.getOrNull().orEmpty().ifBlank { url }
+  return listOf(username, host).filter(String::isNotBlank).joinToString(" · ")
 }
 
 @Composable
@@ -1058,39 +1496,89 @@ private fun SimpleChoiceDialog(
       dismissButton = { TextButton(onClick = onDismiss) { Text("OK") } })
 }
 
+private data class BackupChoiceUi(val name: String, val detail: String, val remote: Boolean)
+
 @Composable
 private fun BackupChoiceDialog(
     title: String,
-    names: List<String>,
-    details: List<String>,
-    chinese: Boolean,
+    choices: List<BackupChoiceUi>,
     onDismiss: () -> Unit,
     onSelect: (Int) -> Unit,
 ) {
   AlertDialog(
       onDismissRequest = onDismiss,
+      icon = { Icon(Icons.Outlined.Restore, null, tint = MaterialTheme.colorScheme.primary) },
       title = { Text(title) },
+      confirmButton = {
+        TextButton(onClick = onDismiss) { Text(stringResource(R.string.dialog_cancel)) }
+      },
       text = {
-        if (names.isEmpty()) {
-          Text(bt(chinese, "没有找到备份", "No backups found"))
-        } else {
-          LazyColumn(Modifier.fillMaxWidth().height(360.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(names.indices.toList()) { index ->
-              Surface(
-                  Modifier.fillMaxWidth().clickable { onSelect(index) },
-                  shape = RoundedCornerShape(16.dp),
-                  color = MaterialTheme.colorScheme.surfaceContainerHigh) {
-                    Column(Modifier.padding(14.dp)) {
-                      Text(names[index], fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                      Text(details[index], Modifier.padding(top = 4.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                  }
+        LazyColumn(
+            Modifier.heightIn(max = 430.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)) {
+          items(choices.size) { index ->
+            val choice = choices[index]
+            Surface(
+                onClick = { onSelect(index) },
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                color = MaterialTheme.colorScheme.surfaceContainer,
+                border =
+                    BorderStroke(
+                        1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = .7f)),
+            ) {
+              Row(
+                  Modifier.fillMaxWidth().padding(12.dp),
+                  verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(13.dp),
+                    color = MaterialTheme.colorScheme.primaryContainer) {
+                  Icon(
+                      if (choice.remote) Icons.Outlined.CloudQueue else Icons.Outlined.FolderZip,
+                      null,
+                      Modifier.padding(10.dp).size(22.dp),
+                      tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                }
+                Column(Modifier.padding(horizontal = 12.dp).weight(1f)) {
+                  Text(
+                      choice.name,
+                      style = MaterialTheme.typography.bodyMedium,
+                      fontWeight = FontWeight.SemiBold,
+                      maxLines = 2,
+                      overflow = TextOverflow.Ellipsis)
+                  Text(
+                      choice.detail,
+                      Modifier.padding(top = 4.dp),
+                      style = MaterialTheme.typography.bodySmall,
+                      color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Icon(
+                    Icons.Outlined.ChevronRight,
+                    null,
+                    tint = MaterialTheme.colorScheme.primary)
+              }
+            }
+          }
+          if (choices.isEmpty()) {
+            item {
+              Column(
+                  Modifier.fillMaxWidth().padding(vertical = 20.dp),
+                  horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Outlined.Inventory2,
+                    null,
+                    Modifier.size(36.dp),
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    stringResource(R.string.no_backups),
+                    Modifier.padding(top = 10.dp),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+              }
             }
           }
         }
       },
-      confirmButton = {},
-      dismissButton = { TextButton(onClick = onDismiss) { Text(bt(chinese, "关闭", "Close")) } })
+  )
 }
 
 private fun retentionLabel(value: Int, chinese: Boolean): String =

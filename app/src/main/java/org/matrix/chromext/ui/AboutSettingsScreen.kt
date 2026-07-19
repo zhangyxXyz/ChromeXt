@@ -64,6 +64,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownTypography
 import org.matrix.chromext.BuildConfig
@@ -85,84 +86,8 @@ fun AboutSettingsScreen(controller: ChromeXtController) {
   val updateClient = remember { UpdateClient() }
   var document by remember { mutableStateOf<AboutDocument?>(null) }
   var readmeLoading by remember { mutableStateOf(false) }
-  val privacy =
-      aboutText(
-          chinese,
-          """## 本地数据
-
-- 用户脚本、设置、备份记录和界面偏好保存在设备本地。
-- ChromeXt 不包含广告、统计分析或用户行为追踪。
-
-## 联网用途
-
-只有使用相关功能时才会联网：
-
-- WebDAV 连接、备份与恢复
-- GitHub Release 更新检查、更新包下载及项目链接
-- 用户脚本自身声明的网络访问
-
-## 凭据与备份
-
-- WebDAV 凭据仅在你保存配置后保存在模块设置中。
-- WebDAV 配置写入备份前会明确提示；加密备份的安全性取决于你设置的密码。
-- 恢复操作会在确认后替换对应本地数据。
-
-## 第三方服务
-
-WebDAV 服务器、浏览器、用户脚本目标网站和 GitHub 会依据各自的服务条款与隐私政策处理请求。连接服务或安装脚本前，请先核实来源和政策。""",
-          """## Local data
-
-- Userscripts, settings, backup records, and appearance preferences are stored on this device.
-- ChromeXt does not include advertising, analytics, or user-behavior tracking.
-
-## Network access
-
-Network access occurs only when you use a related feature:
-
-- WebDAV connection, backup, and restore
-- GitHub Release checks, update downloads, and project links
-- Network access declared by installed userscripts
-
-## Credentials and backups
-
-- WebDAV credentials are stored in module settings only after you save the configuration.
-- The app prompts before including WebDAV configuration in a backup; encrypted-backup safety depends on your password.
-- Restore replaces the corresponding local data only after confirmation.
-
-## Third-party services
-
-WebDAV servers, browsers, userscript target sites, and GitHub process requests under their own terms and privacy policies. Verify the source and policies before connecting a service or installing a script.""",
-      )
-  val disclaimer =
-      aboutText(
-          chinese,
-          """# 免责声明
-
-ChromeXt 是开源软件，按“原样”提供，不附带任何形式的保证。
-
-## 用户责任
-
-- 你应自行确认用户脚本、网站、WebDAV 服务、备份文件及更新包来源的合法性、准确性、安全性与可用性。
-- 恢复备份、安装脚本或更新前，请独立保存重要数据并核验内容。
-- 用户脚本可以在浏览器页面中执行代码；仅安装你信任的脚本。
-
-## 项目责任
-
-项目维护者不托管用户内容，也无法保证第三方脚本、网站、浏览器或网络服务的可用性及行为。在适用法律允许的范围内，维护者不对使用本应用造成的数据丢失、服务中断、安全问题或其他损失承担责任。""",
-          """# Disclaimer
-
-ChromeXt is open-source software and is provided “as is”, without warranty of any kind.
-
-## User responsibility
-
-- You are responsible for the legality, accuracy, security, and availability of userscripts, websites, WebDAV services, backup files, and update packages.
-- Keep an independent copy of important data and verify content before restoring a backup or installing a script or update.
-- Userscripts can execute code in browser pages; install only scripts you trust.
-
-## Project responsibility
-
-The maintainers do not host user content and cannot guarantee the availability or behavior of third-party scripts, websites, browsers, or network services. To the extent permitted by law, the maintainers are not liable for data loss, interruption, security incidents, or other damages arising from use of this app.""",
-      )
+  val privacy = stringResource(R.string.about_privacy_content)
+  val disclaimer = stringResource(R.string.about_disclaimer_content)
 
   fun openProjectInformation() {
     if (readmeLoading) return

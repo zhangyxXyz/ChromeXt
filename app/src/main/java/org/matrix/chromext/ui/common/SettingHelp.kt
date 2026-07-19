@@ -25,18 +25,24 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.mikepenz.markdown.m3.Markdown
 import com.mikepenz.markdown.m3.markdownTypography
-import org.matrix.chromext.UiLocalization
+import org.matrix.chromext.R
 
 @Composable
 fun SettingTitleWithHelp(
     title: String,
     helpMarkdown: String? = null,
     enabled: Boolean = true,
+    textStyle: TextStyle = MaterialTheme.typography.bodyLarge,
+    textColor: Color = MaterialTheme.colorScheme.onSurface,
+    fontWeight: FontWeight? = null,
     trailingContent: @Composable () -> Unit = {},
 ) {
   var showHelp by remember { mutableStateOf(false) }
@@ -47,7 +53,9 @@ fun SettingTitleWithHelp(
     Text(
         title,
         modifier = Modifier.weight(1f, fill = false),
-        color = MaterialTheme.colorScheme.onSurface.copy(alpha = if (enabled) 1f else .45f),
+        style = textStyle,
+        color = textColor.copy(alpha = if (enabled) 1f else .45f),
+        fontWeight = fontWeight,
         maxLines = 1,
         overflow = TextOverflow.Ellipsis,
     )
@@ -68,7 +76,6 @@ fun SettingTitleWithHelp(
 
 @Composable
 fun MarkdownHelpDialog(title: String, markdown: String, onDismiss: () -> Unit) {
-  val context = LocalContext.current
   AlertDialog(
       onDismissRequest = onDismiss,
       title = { Text(title) },
@@ -101,7 +108,7 @@ fun MarkdownHelpDialog(title: String, markdown: String, onDismiss: () -> Unit) {
       },
       confirmButton = {
         TextButton(onDismiss) {
-          Text(UiLocalization.text(context, "确定", "OK"))
+          Text(stringResource(R.string.dialog_ok))
         }
       },
   )
